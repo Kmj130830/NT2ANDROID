@@ -105,6 +105,9 @@ int main(int argc, char** argv) {
     std::size_t rresLayoutMatch = 0;
     std::size_t rresSizeFieldMatch = 0;
     std::size_t rresCountMatch = 0;
+    std::size_t rresCountAEqualHead = 0;
+    std::size_t rresCountBEqualHead = 0;
+    std::size_t rresCountsEqual = 0;
     std::size_t rresFooterSecondZero = 0;
 
     std::map<std::uint32_t, std::size_t> versionHistogram;
@@ -181,8 +184,19 @@ int main(int argc, char** argv) {
                 const std::uint32_t storedCountB =
                     readU32LE(reader.bytes(), base + 12);
 
+                if (storedCountA == n) {
+                    ++rresCountAEqualHead;
+                }
+                if (storedCountB == n) {
+                    ++rresCountBEqualHead;
+                }
+                if (storedCountA == storedCountB) {
+                    ++rresCountsEqual;
+                }
                 if (storedCountA == n && storedCountB == n) {
                     ++rresCountMatch;
+                } else {
+                    rresCountMismatches.push_back(i);
                 }
 
                 if (payload >= 8) {
