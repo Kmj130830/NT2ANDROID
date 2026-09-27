@@ -3,6 +3,7 @@
 #include <algorithm>
 #include <array>
 #include <cstddef>
+#include <utility>
 
 namespace nt2 {
 namespace {
@@ -14,28 +15,67 @@ constexpr std::array<std::uint8_t, 4> kM9p = {
     static_cast<std::uint8_t>('@')
 };
 
-constexpr std::array<std::array<char, 4>, 4> kTags = {{
-    {{'v', 'e', 'r', 0}},
-    {{'h', 'e', 'a', 'd'}},
-    {{'h', 'a', 'r', 'm'}},
-    {{'r', 'r', 'e', 's'}}
-}};
+constexpr std::array<std::uint8_t, 4> kHead = {
+    static_cast<std::uint8_t>('h'),
+    static_cast<std::uint8_t>('e'),
+    static_cast<std::uint8_t>('a'),
+    static_cast<std::uint8_t>('d')
+};
 
-bool matchesM9p(const std::vector<std::uint8_t>& bytes, std::size_t p) {
-    if (p + kM9p.size() > bytes.size()) return false;
-    return std::equal(kM9p.begin(), kM9p.end(), bytes.begin() + p);
-}
+constexpr std::array<std::uint8_t, 4> kHarm = {
+    static_cast<std::uint8_t>('h'),
+    static_cast<std::uint8_t>('a'),
+    static_cast<std::uint8_t>('r'),
+    static_cast<std::uint8_t>('m')
+};
 
-bool matchesTag(
+constexpr std::array<std::uint8_t, 4> kRres = {
+    static_cast<std::uint8_t>('r'),
+    static_cast<std::uint8_t>('r'),
+    static_cast<std::uint8_t>('e'),
+    static_cast<std::uint8_t>('s')
+};
+
+bool matches4(
     const std::vector<std::uint8_t>& bytes,
     std::size_t p,
-    const std::array<char, 4>& tag
+    const std::array<std::uint8_t, 4>& tag
 ) {
-    if (p + 4 > bytes.size()) return false;
-    for (std::size_t i = 0; i < 4; ++i) {
-        if (static_cast<char>(bytes[p + i]) != tag[i]) return false;
+    if (p > bytes.size() || bytes.size() - p < tag.size()) return false;
+    return std::equal(tag.begin(), tag.end(), bytes.begin() + p);
+}
+
+std::size_t findTag(
+    const std::vector<std::uint8_t>& bytes,
+    std::size_t begin,
+    std::size_t end,
+    const std::array<std::uint8_t, 4>& tag
+) {
+    if (begin > end || end > bytes.size()) return bytes.size();
+
+    for (std::size_t p = begin; p + tag.size() <= end; ++p) {
+        if (matches4(bytes, p, tag)) return p;
     }
-    return true;
+
+    return bytes.size();
+}
+
+void addSection(
+    M9pRecord& record,
+    const char* tag,
+    std::size_t tagOffset,
+    std::size_t tagSize,
+    std::size_t nextOffset
+) {
+    M9pSection section;
+    section.tag = tag;
+    section.offset = tagOffset;
+    section.payloadOffset = tagOffset + tagSize;
+    section.payloadSize =
+        nextOffset >= section.payloadOffset
+            ? static_cast<std::uint64_t>(nextOffset - section.payloadOffset)
+            : 0;
+    record.sections.push_back(std::move(section));
 }
 
 } // namespace
@@ -47,11 +87,13 @@ std::vector<M9pRecord> M9pScanner::scan(
     std::vector<std::size_t> offsets;
 
     for (std::size_t p = 0; p + kM9p.size() <= bytes.size(); ++p) {
-        if (matchesM9p(bytes, p)) offsets.push_back(p);
+        if (matches4(bytes, p, kM9p)) offsets.push_back(p);
     }
 
     std::vector<M9pRecord> records;
     records.reserve(offsets.size());
+
+    std::size_t malformed = 0;
 
     for (std::size_t i = 0; i < offsets.size(); ++i) {
         const std::size_t start = offsets[i];
@@ -62,31 +104,48 @@ std::vector<M9pRecord> M9pScanner::scan(
         record.offset = start;
         record.endOffset = end;
 
-        for (std::size_t p = start + kM9p.size(); p + 4 <= end; ++p) {
-            for (const auto& tag : kTags) {
-                if (!matchesTag(bytes, p, tag)) continue;
-
-                M9pSection section;
-                section.tag.assign(
-                    reinterpret_cast<const char*>(bytes.data() + p), 4);
-                section.offset = p;
-                section.payloadOffset = p + 4;
-
-                // This is only the distance to the end of the containing M9P.
-                // It is NOT the confirmed section length.
-                section.payloadSize =
-                    static_cast<std::uint64_t>(end - section.payloadOffset);
-
-                record.sections.push_back(std::move(section));
-                break;
-            }
+        // The first eight records in the supplied database all put "head"
+        // exactly 0x14 bytes after M9P@. Keep this as an observed structural
+        // invariant and verify it rather than searching the entire record.
+        const std::size_t headOffset = start + 0x14;
+        if (headOffset + 4 > end || !matches4(bytes, headOffset, kHead)) {
+            ++malformed;
+            records.push_back(std::move(record));
+            continue;
         }
+
+        const std::size_t harmOffset = headOffset + 4 + 24;
+        if (harmOffset + 4 > end || !matches4(bytes, harmOffset, kHarm)) {
+            ++malformed;
+            records.push_back(std::move(record));
+            continue;
+        }
+
+        const std::size_t rresOffset =
+            findTag(bytes, harmOffset + 4, end, kRres);
+
+        if (rresOffset == bytes.size()) {
+            ++malformed;
+            records.push_back(std::move(record));
+            continue;
+        }
+
+        addSection(record, "head", headOffset, 4, harmOffset);
+        addSection(record, "harm", harmOffset, 4, rresOffset);
+        addSection(record, "rres", rresOffset, 4, end);
 
         records.push_back(std::move(record));
     }
 
-    if (warning && records.empty()) {
-        *warning = "No M9P@ signatures were found.";
+    if (warning) {
+        if (records.empty()) {
+            *warning = "No M9P@ signatures were found.";
+        } else if (malformed != 0) {
+            *warning = "Some M9P records did not match the currently observed "
+                       "head/harm/rres structural layout.";
+        } else {
+            warning->clear();
+        }
     }
 
     return records;
