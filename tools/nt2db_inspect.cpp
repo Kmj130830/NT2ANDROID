@@ -512,6 +512,8 @@ int main(int argc, char** argv) {
                     std::size_t tailNonZero = 0;
                     std::int32_t tailMaxAbs = 0;
                     std::size_t totalNonZero = 0;
+                    std::size_t firstNonZero = static_cast<std::size_t>(countB);
+                    std::size_t lastNonZero = 0;
 
                     for (std::size_t sample = 0;
                          sample < static_cast<std::size_t>(countB);
@@ -530,6 +532,8 @@ int main(int argc, char** argv) {
 
                         if (value != 0) {
                             ++totalNonZero;
+                            firstNonZero = std::min(firstNonZero, sample);
+                            lastNonZero = std::max(lastNonZero, sample);
                         }
 
                         if (sample >= countA && value != 0) {
@@ -545,6 +549,19 @@ int main(int argc, char** argv) {
                     std::cout << " tailNonZero=" << tailNonZero
                               << " tailMaxAbs=" << tailMaxAbs
                               << " totalNonZero=" << totalNonZero;
+
+                    if (totalNonZero != 0) {
+                        std::cout << " firstNZ=" << firstNonZero
+                                  << " lastNZ=" << lastNonZero
+                                  << " lastNZ-countA=";
+                        if (lastNonZero >= countA) {
+                            std::cout << (lastNonZero - countA);
+                        } else {
+                            std::cout << "-" << (countA - lastNonZero);
+                        }
+                        std::cout << " trailingZero="
+                                  << (static_cast<std::size_t>(countB) - 1u - lastNonZero);
+                    }
                 }
 
                 if (harm) {
