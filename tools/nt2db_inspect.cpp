@@ -113,6 +113,12 @@ int main(int argc, char** argv) {
     std::size_t rresField0CMatchesHarm04 = 0;
     std::size_t rresField0CMatchesHarm08 = 0;
     std::size_t rresFooterSecondZero = 0;
+    std::size_t harmSizeFieldMatch = 0;
+    std::size_t harmHeaderCorrelationEither = 0;
+    std::map<std::uint32_t, std::size_t> harmField04Histogram;
+    std::map<std::uint32_t, std::size_t> harmField08Histogram;
+    std::map<std::uint32_t, std::size_t> harmField0CHistogram;
+
     std::size_t rresCountAZero = 0;
     std::size_t rresCountAPowerOfTwo = 0;
     std::size_t rresCountALessThan4096 = 0;
@@ -198,6 +204,33 @@ int main(int argc, char** argv) {
         }
 
         const auto* rres = findSection(record, "rres");
+        const auto* harmForStats = findSection(record, "harm");
+
+        if (harmForStats && harmForStats->payloadSize >= 16) {
+            const std::size_t harmBase =
+                static_cast<std::size_t>(harmForStats->payloadOffset);
+            const std::size_t harmPayload =
+                static_cast<std::size_t>(harmForStats->payloadSize);
+
+            const std::uint32_t harmSize =
+                readU32LE(reader.bytes(), harmBase);
+            const std::uint32_t harm04 =
+                readU32LE(reader.bytes(), harmBase + 4);
+            const std::uint32_t harm08 =
+                readU32LE(reader.bytes(), harmBase + 8);
+            const std::uint32_t harm0C =
+                readU32LE(reader.bytes(), harmBase + 12);
+
+            if (static_cast<std::uint64_t>(harmSize) + 4u ==
+                static_cast<std::uint64_t>(harmPayload)) {
+                ++harmSizeFieldMatch;
+            }
+
+            ++harmField04Histogram[harm04];
+            ++harmField08Histogram[harm08];
+            ++harmField0CHistogram[harm0C];
+        }
+
         if (rres && record.hasHead) {
             const std::size_t payload =
                 static_cast<std::size_t>(rres->payloadSize);
@@ -247,6 +280,9 @@ int main(int argc, char** argv) {
                     }
                     if (storedCountB == harm08) {
                         ++rresField0CMatchesHarm08;
+                    }
+                    if (storedCountA == harm08 || storedCountB == harm08) {
+                        ++harmHeaderCorrelationEither;
                     }
                 }
 
@@ -427,6 +463,17 @@ int main(int argc, char** argv) {
               << rresCountsEqual << "/" << records.size() << '\n';
     std::cout << "rres footer u32[1]=0: "
               << rresFooterSecondZero << "/" << records.size() << '\n';
+
+    std::cout << "\nHARM header size field:\n";
+    std::cout << "  HARM +0x00 == payload-4 : "
+              << harmSizeFieldMatch << "/" << records.size() << '\n';
+
+    printTopHistogram("HARM +0x04 values", harmField04Histogram);
+    printTopHistogram("HARM +0x08 values", harmField08Histogram);
+    printTopHistogram("HARM +0x0C values", harmField0CHistogram);
+
+    std::cout << "HARM/RRES shared-field correlation (either RRES +0x08 or +0x0C): "
+              << harmHeaderCorrelationEither << "/" << records.size() << '\n';
 
     std::cout << "\nRRES <-> HARM metadata correlation:\n";
     std::cout << "  RRES +0x08 == HARM +0x04 : "
@@ -611,7 +658,7 @@ int main(int argc, char** argv) {
                 printHex(
                     reader.bytes(),
                     static_cast<std::size_t>(harm->payloadOffset),
-                    32
+                    64
                 );
             }
 
