@@ -22,6 +22,9 @@ The same portable core is intended to build on Windows x64, Android arm64-v8a, a
 - C++ standard: C++17
 - 32-bit armeabi-v7a: deferred
 - SIMD: scalar reference first; optional ARM64 NEON later
+- 16 KiB ELF page alignment: enabled for Android builds
+
+As of September 2026, Android's current NDK LTS is r30. The project does not hard-code an NDK version in the core so that the local Android project can pin the exact NDK version it uses.
 
 ## Current status
 
@@ -51,12 +54,18 @@ Requirements:
 Requirements:
 - Android SDK
 - Android NDK
-- NDK CMake toolchain
+- CMake from Android Studio/SDK or a compatible standalone CMake
 
-    cmake -S . -B build-android -DCMAKE_TOOLCHAIN_FILE=%ANDROID_NDK%/build/cmake/android.toolchain.cmake -DANDROID_ABI=arm64-v8a -DANDROID_PLATFORM=android-27 -DNT2_BUILD_TESTS=OFF
+The Android Studio/NDK toolchain supports building native C/C++ code through CMake, and the same CMake project can be used for cross-platform builds.
+
+For arm64-v8a:
+
+    cmake -S . -B build-android -DCMAKE_TOOLCHAIN_FILE=%ANDROID_NDK%/build/cmake/android.toolchain.cmake -DANDROID_ABI=arm64-v8a -DANDROID_PLATFORM=android-27 -DANDROID_STL=c++_static -DNT2_BUILD_TESTS=OFF
     cmake --build build-android --config Release
 
-The first Android milestone is a loadable libnt2core.so.
+For x86_64 emulator testing, replace ANDROID_ABI with x86_64.
+
+The first Android milestone is a loadable libnt2core.so. No Android UI is required at this stage.
 
 ## Local proprietary files
 
