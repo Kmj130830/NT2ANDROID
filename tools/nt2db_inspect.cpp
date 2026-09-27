@@ -3,42 +3,12 @@
 
 #include <algorithm>
 #include <cstdint>
-#include <cstring>
 #include <iomanip>
 #include <iostream>
 #include <string>
+#include <vector>
 
 namespace {
-
-std::uint32_t readU32LE(const std::uint8_t* p) {
-    return static_cast<std::uint32_t>(p[0])
-        | (static_cast<std::uint32_t>(p[1]) << 8)
-        | (static_cast<std::uint32_t>(p[2]) << 16)
-        | (static_cast<std::uint32_t>(p[3]) << 24);
-}
-
-float readF32LE(const std::uint8_t* p) {
-    const std::uint32_t bits = readU32LE(p);
-    float value = 0.0f;
-    std::memcpy(&value, &bits, sizeof(value));
-    return value;
-}
-
-double readF64LE(const std::uint8_t* p) {
-    std::uint64_t bits =
-        static_cast<std::uint64_t>(p[0])
-        | (static_cast<std::uint64_t>(p[1]) << 8)
-        | (static_cast<std::uint64_t>(p[2]) << 16)
-        | (static_cast<std::uint64_t>(p[3]) << 24)
-        | (static_cast<std::uint64_t>(p[4]) << 32)
-        | (static_cast<std::uint64_t>(p[5]) << 40)
-        | (static_cast<std::uint64_t>(p[6]) << 48)
-        | (static_cast<std::uint64_t>(p[7]) << 56);
-
-    double value = 0.0;
-    std::memcpy(&value, &bits, sizeof(value));
-    return value;
-}
 
 void printHex(
     const std::vector<std::uint8_t>& bytes,
@@ -57,37 +27,14 @@ void printHex(
     std::cout << std::setfill(' ') << std::dec << '\n';
 }
 
-void printHeadCandidates(
-    const std::vector<std::uint8_t>& bytes,
-    const nt2::M9pSection& head
-) {
-    if (head.payloadSize != 24 || head.payloadOffset + 24 > bytes.size()) {
-        return;
-    }
-
-    const auto* p = bytes.data() + head.payloadOffset;
-
-    std::cout << "    head.hex    : ";
-    printHex(bytes, static_cast<std::size_t>(head.payloadOffset), 24);
-
+void printHead(const nt2::M9pHead& head) {
+    std::cout << "    declared : " << head.declaredSize << " bytes\n";
+    std::cout << "    flags    : 0x" << std::hex << head.flags << std::dec << '\n';
     std::cout << std::setprecision(10);
-    std::cout << "    head.u32    :";
-    for (int i = 0; i < 6; ++i) {
-        std::cout << ' ' << readU32LE(p + i * 4);
-    }
-    std::cout << '\n';
-
-    std::cout << "    head.f32    :";
-    for (int i = 0; i < 6; ++i) {
-        std::cout << ' ' << readF32LE(p + i * 4);
-    }
-    std::cout << '\n';
-
-    std::cout << "    head.f64    : "
-              << readF64LE(p) << ' '
-              << readF64LE(p + 8) << ' '
-              << readF64LE(p + 16) << '\n';
-
+    std::cout << "    sampleRate       : " << head.sampleRate << " Hz\n";
+    std::cout << "    referenceFrequency : "
+              << head.referenceFrequency << " Hz\n";
+    std::cout << "    sampleCount      : " << head.sampleCount << '\n';
     std::cout << std::setprecision(6);
 }
 
@@ -124,17 +71,31 @@ int main(int argc, char** argv) {
     const auto records = nt2::M9pScanner::scan(reader.bytes(), &warning);
 
     std::size_t structurallyValid = 0;
+    std::size_t headSize20 = 0;
+    std::size_t flagsZero = 0;
+    std::size_t sampleRate44100 = 0;
+
     for (const auto& record : records) {
         if (record.sections.size() == 3
             && record.sections[0].tag == "head"
             && record.sections[1].tag == "harm"
-            && record.sections[2].tag == "rres") {
+            && record.sections[2].tag == "rres"
+            && record.hasHead) {
             ++structurallyValid;
+            if (record.head.declaredSize == 20) ++headSize20;
+            if (record.head.flags == 0) ++flagsZero;
+            if (record.head.sampleRate == 44100.0f) ++sampleRate44100;
         }
     }
 
     std::cout << "Structure valid : "
               << structurallyValid << "/" << records.size() << '\n';
+    std::cout << "head declared=20: "
+              << headSize20 << "/" << structurallyValid << '\n';
+    std::cout << "head flags=0    : "
+              << flagsZero << "/" << structurallyValid << '\n';
+    std::cout << "sampleRate=44100 : "
+              << sampleRate44100 << "/" << structurallyValid << '\n';
 
     const std::size_t count = records.size() < 8 ? records.size() : 8;
 
@@ -149,11 +110,13 @@ int main(int argc, char** argv) {
         std::cout << "  size   : "
                   << (record.endOffset - record.offset)
                   << " bytes\n";
-        std::cout << "  prefix : "
-                  << (record.sections.empty()
-                      ? 0
-                      : record.sections.front().offset - record.offset)
-                  << " bytes\n";
+
+        std::cout << "  prefix(20) : ";
+        printHex(
+            reader.bytes(),
+            static_cast<std::size_t>(record.offset),
+            20
+        );
 
         for (const auto& section : record.sections) {
             std::cout << "  " << section.tag
@@ -162,8 +125,27 @@ int main(int argc, char** argv) {
                       << std::dec
                       << " size=" << section.payloadSize << " bytes\n";
 
-            if (section.tag == "head") {
-                printHeadCandidates(reader.bytes(), section);
+            if (section.tag == "head" && record.hasHead) {
+                printHead(record.head);
+            }
+
+            if (section.tag == "rres") {
+                const std::size_t sampleBytes =
+                    static_cast<std::size_t>(record.head.sampleCount) * 2u;
+                const std::size_t expectedPayload = 24u + sampleBytes;
+
+                std::cout << "    first24      : ";
+                printHex(
+                    reader.bytes(),
+                    static_cast<std::size_t>(section.payloadOffset),
+                    24
+                );
+                std::cout << "    payload-expected-from-head : "
+                          << expectedPayload << " bytes\n";
+                std::cout << "    payload-minus-expected     : "
+                          << static_cast<long long>(section.payloadSize)
+                             - static_cast<long long>(expectedPayload)
+                          << " bytes\n";
             }
         }
     }
