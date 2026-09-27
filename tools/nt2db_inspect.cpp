@@ -122,6 +122,8 @@ int main(int argc, char** argv) {
     std::map<std::uint32_t, std::size_t> field08Histogram;
     std::map<std::uint32_t, std::size_t> countAValueHistogram;
     std::map<std::uint32_t, std::size_t> countDifferenceHistogram;
+    std::map<std::uint32_t, std::size_t> rresUnknown0Histogram;
+    std::map<std::uint32_t, std::size_t> rresFooterFirstHistogram;
 
     std::size_t countRatioZero = 0;
     std::size_t countRatioUpTo25 = 0;
@@ -207,6 +209,10 @@ int main(int argc, char** argv) {
                     static_cast<std::size_t>(rres->payloadOffset);
                 const std::uint32_t storedSize =
                     readU32LE(reader.bytes(), base);
+                const std::uint32_t storedUnknown0 =
+                    readU32LE(reader.bytes(), base + 4);
+
+                ++rresUnknown0Histogram[storedUnknown0];
 
                 if (storedSize + 12u == payload) {
                     ++rresSizeFieldMatch;
@@ -353,6 +359,13 @@ int main(int argc, char** argv) {
                             reader.bytes(),
                             base + payload - 4
                         );
+                    const std::uint32_t footerFirst =
+                        readU32LE(
+                            reader.bytes(),
+                            base + payload - 8
+                        );
+                    ++rresFooterFirstHistogram[footerFirst];
+
                     if (footerSecond == 0) {
                         ++rresFooterSecondZero;
                     }
@@ -436,6 +449,8 @@ int main(int argc, char** argv) {
 
     printTopHistogram("RRES countA values", countAValueHistogram);
     printTopHistogram("RRES countB-countA values", countDifferenceHistogram);
+    printTopHistogram("RRES unknown0 values", rresUnknown0Histogram);
+    printTopHistogram("RRES footer first u32 values", rresFooterFirstHistogram);
 
     std::cout << "\nRRES countA/countB ratio buckets:\n";
     std::cout << "  ratio == 0       : " << countRatioZero << '\n';
@@ -552,6 +567,15 @@ int main(int argc, char** argv) {
 
             if (record.hasHead) {
                 std::cout << " headN=" << record.head.sampleCount;
+            }
+
+            if (harm) {
+                std::cout << " harmFirst32=";
+                printHex(
+                    reader.bytes(),
+                    static_cast<std::size_t>(harm->payloadOffset),
+                    32
+                );
             }
 
             if (rres && rres->payloadSize >= 16) {
