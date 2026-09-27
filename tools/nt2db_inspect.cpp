@@ -31,10 +31,10 @@ void printHead(const nt2::M9pHead& head) {
     std::cout << "    declared : " << head.declaredSize << " bytes\n";
     std::cout << "    flags    : 0x" << std::hex << head.flags << std::dec << '\n';
     std::cout << std::setprecision(10);
-    std::cout << "    sampleRate       : " << head.sampleRate << " Hz\n";
+    std::cout << "    field+08 : " << head.field08F32 << " (float)\n";
     std::cout << "    referenceFrequency : "
               << head.referenceFrequency << " Hz\n";
-    std::cout << "    sampleCount      : " << head.sampleCount << '\n';
+    std::cout << "    sampleCount : " << head.sampleCount << '\n';
     std::cout << std::setprecision(6);
 }
 
@@ -71,9 +71,10 @@ int main(int argc, char** argv) {
     const auto records = nt2::M9pScanner::scan(reader.bytes(), &warning);
 
     std::size_t structurallyValid = 0;
+    std::size_t lengthValid = 0;
+    std::size_t version20250410 = 0;
     std::size_t headSize20 = 0;
     std::size_t flagsZero = 0;
-    std::size_t sampleRate44100 = 0;
 
     for (const auto& record : records) {
         if (record.sections.size() == 3
@@ -82,20 +83,25 @@ int main(int argc, char** argv) {
             && record.sections[2].tag == "rres"
             && record.hasHead) {
             ++structurallyValid;
-            if (record.head.declaredSize == 20) ++headSize20;
-            if (record.head.flags == 0) ++flagsZero;
-            if (record.head.sampleRate == 44100.0f) ++sampleRate44100;
         }
+        if (record.lengthMatches) ++lengthValid;
+        if (record.hasVersion && record.version.value == 20250410u) {
+            ++version20250410;
+        }
+        if (record.hasHead && record.head.declaredSize == 20) ++headSize20;
+        if (record.hasHead && record.head.flags == 0) ++flagsZero;
     }
 
-    std::cout << "Structure valid : "
+    std::cout << "Structure valid   : "
               << structurallyValid << "/" << records.size() << '\n';
-    std::cout << "head declared=20: "
-              << headSize20 << "/" << structurallyValid << '\n';
-    std::cout << "head flags=0    : "
-              << flagsZero << "/" << structurallyValid << '\n';
-    std::cout << "sampleRate=44100 : "
-              << sampleRate44100 << "/" << structurallyValid << '\n';
+    std::cout << "Length field valid: "
+              << lengthValid << "/" << records.size() << '\n';
+    std::cout << "ver=20250410      : "
+              << version20250410 << "/" << records.size() << '\n';
+    std::cout << "head declared=20  : "
+              << headSize20 << "/" << records.size() << '\n';
+    std::cout << "head flags=0       : "
+              << flagsZero << "/" << records.size() << '\n';
 
     const std::size_t count = records.size() < 8 ? records.size() : 8;
 
@@ -110,13 +116,23 @@ int main(int argc, char** argv) {
         std::cout << "  size   : "
                   << (record.endOffset - record.offset)
                   << " bytes\n";
+        std::cout << "  bodySz : "
+                  << record.declaredBodySize
+                  << " (size-16="
+                  << ((record.endOffset - record.offset) >= 16
+                      ? (record.endOffset - record.offset) - 16
+                      : 0)
+                  << ")"
+                  << (record.lengthMatches ? " [match]" : " [MISMATCH]")
+                  << '\n';
 
-        std::cout << "  prefix(20) : ";
-        printHex(
-            reader.bytes(),
-            static_cast<std::size_t>(record.offset),
-            20
-        );
+        if (record.hasVersion) {
+            std::cout << "  ver    : "
+                      << record.version.value
+                      << " (0x" << std::hex
+                      << record.version.value
+                      << std::dec << ")\n";
+        }
 
         for (const auto& section : record.sections) {
             std::cout << "  " << section.tag
@@ -130,24 +146,49 @@ int main(int argc, char** argv) {
             }
 
             if (section.tag == "rres") {
-                const std::size_t sampleBytes =
-                    static_cast<std::size_t>(record.head.sampleCount) * 2u;
-                const std::size_t expectedPayload = 24u + sampleBytes;
+                const std::size_t payload =
+                    static_cast<std::size_t>(section.payloadSize);
 
-                std::cout << "    first24      : ";
+                std::cout << "    rres first16 : ";
                 printHex(
                     reader.bytes(),
                     static_cast<std::size_t>(section.payloadOffset),
-                    24
+                    16
                 );
-                std::cout << "    payload-expected-from-head : "
-                          << expectedPayload << " bytes\n";
-                std::cout << "    payload-minus-expected     : "
-                          << static_cast<long long>(section.payloadSize)
-                             - static_cast<long long>(expectedPayload)
-                          << " bytes\n";
+
+                if (payload >= 16) {
+                    std::cout << "    rres tail16  : ";
+                    printHex(
+                        reader.bytes(),
+                        static_cast<std::size_t>(
+                            section.payloadOffset + payload - 16
+                        ),
+                        16
+                    );
+                }
+
+                if (record.hasHead) {
+                    const std::size_t n = record.head.sampleCount;
+                    const std::size_t candidate = 16u + n * 2u + 8u;
+
+                    std::cout << "    payload                   : "
+                              << payload << " bytes\n";
+                    std::cout << "    16 + sampleCount*2 + 8   : "
+                              << candidate << " bytes\n";
+                    std::cout << "    difference                : "
+                              << static_cast<long long>(payload)
+                                 - static_cast<long long>(candidate)
+                              << " bytes\n";
+                }
             }
         }
+
+        std::cout << "  prefix20: ";
+        printHex(
+            reader.bytes(),
+            static_cast<std::size_t>(record.offset),
+            20
+        );
     }
 
     if (!warning.empty()) {
