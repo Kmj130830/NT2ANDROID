@@ -1,11 +1,13 @@
 #pragma once
 
+#include "nt2core/export.h"
+
 #include <cstddef>
 #include <cstdint>
 
 namespace nt2 {
 
-class ByteReader {
+class NT2CORE_API ByteReader {
 public:
     ByteReader(const std::uint8_t* data, std::size_t size) noexcept;
 
