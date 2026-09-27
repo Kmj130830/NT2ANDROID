@@ -3,6 +3,7 @@ cmake_minimum_required(VERSION 3.21)
 project(NT2ANDROID LANGUAGES CXX)
 
 option(NT2_BUILD_TESTS "Build Windows research tools" ON)
+option(NT2_ANDROID_16K_PAGE "Emit 16 KiB ELF page alignment flags for Android" ON)
 
 set(CMAKE_CXX_STANDARD 17)
 set(CMAKE_CXX_STANDARD_REQUIRED ON)
@@ -15,7 +16,7 @@ add_library(nt2core SHARED
 )
 
 target_include_directories(nt2core PUBLIC
-    \${CMAKE_CURRENT_SOURCE_DIR}/core/include
+    ${CMAKE_CURRENT_SOURCE_DIR}/core/include
 )
 
 if (MSVC)
@@ -28,6 +29,13 @@ if (WIN32)
     target_compile_definitions(nt2core PRIVATE NT2_PLATFORM_WINDOWS=1)
 elseif (ANDROID)
     target_compile_definitions(nt2core PRIVATE NT2_PLATFORM_ANDROID=1)
+
+    if (NT2_ANDROID_16K_PAGE)
+        target_link_options(nt2core PRIVATE
+            "-Wl,-z,max-page-size=16384"
+            "-Wl,-z,common-page-size=16384"
+        )
+    endif()
 else()
     target_compile_definitions(nt2core PRIVATE NT2_PLATFORM_GENERIC=1)
 endif()
