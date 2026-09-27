@@ -2,7 +2,6 @@
 #include "nt2core/m9p_scanner.h"
 
 #include <algorithm>
-#include <array>
 #include <cstdint>
 #include <cstring>
 #include <iomanip>
@@ -41,7 +40,11 @@ double readF64LE(const std::uint8_t* p) {
     return value;
 }
 
-void printHex(const std::vector<std::uint8_t>& bytes, std::size_t offset, std::size_t count) {
+void printHex(
+    const std::vector<std::uint8_t>& bytes,
+    std::size_t offset,
+    std::size_t count
+) {
     const std::size_t available =
         offset < bytes.size() ? bytes.size() - offset : 0;
     const std::size_t n = std::min(count, available);
@@ -84,6 +87,7 @@ void printHeadCandidates(
               << readF64LE(p) << ' '
               << readF64LE(p + 8) << ' '
               << readF64LE(p + 16) << '\n';
+
     std::cout << std::setprecision(6);
 }
 
@@ -118,15 +122,38 @@ int main(int argc, char** argv) {
 
     std::string warning;
     const auto records = nt2::M9pScanner::scan(reader.bytes(), &warning);
+
+    std::size_t structurallyValid = 0;
+    for (const auto& record : records) {
+        if (record.sections.size() == 3
+            && record.sections[0].tag == "head"
+            && record.sections[1].tag == "harm"
+            && record.sections[2].tag == "rres") {
+            ++structurallyValid;
+        }
+    }
+
+    std::cout << "Structure valid : "
+              << structurallyValid << "/" << records.size() << '\n';
+
     const std::size_t count = records.size() < 8 ? records.size() : 8;
 
     for (std::size_t i = 0; i < count; ++i) {
         const auto& record = records[i];
 
         std::cout << "\nrecord[" << i << "]\n";
-        std::cout << "  offset : 0x" << std::hex << record.offset << std::dec << '\n';
-        std::cout << "  end    : 0x" << std::hex << record.endOffset << std::dec << '\n';
-        std::cout << "  size   : " << (record.endOffset - record.offset) << " bytes\n";
+        std::cout << "  offset : 0x" << std::hex
+                  << record.offset << std::dec << '\n';
+        std::cout << "  end    : 0x" << std::hex
+                  << record.endOffset << std::dec << '\n';
+        std::cout << "  size   : "
+                  << (record.endOffset - record.offset)
+                  << " bytes\n";
+        std::cout << "  prefix : "
+                  << (record.sections.empty()
+                      ? 0
+                      : record.sections.front().offset - record.offset)
+                  << " bytes\n";
 
         for (const auto& section : record.sections) {
             std::cout << "  " << section.tag
