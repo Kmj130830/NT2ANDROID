@@ -116,6 +116,7 @@ int main(int argc, char** argv) {
 
     std::vector<std::size_t> lengthMismatches;
     std::vector<std::size_t> unusualVersions;
+    std::vector<std::size_t> rresCountMismatches;
 
     for (std::size_t i = 0; i < records.size(); ++i) {
         const auto& record = records[i];
@@ -231,6 +232,12 @@ int main(int argc, char** argv) {
               << rresSizeFieldMatch << "/" << records.size() << '\n';
     std::cout << "rres counts=N,N     : "
               << rresCountMatch << "/" << records.size() << '\n';
+    std::cout << "rres countA=N       : "
+              << rresCountAEqualHead << "/" << records.size() << '\n';
+    std::cout << "rres countB=N       : "
+              << rresCountBEqualHead << "/" << records.size() << '\n';
+    std::cout << "rres countA=countB  : "
+              << rresCountsEqual << "/" << records.size() << '\n';
     std::cout << "rres footer u32[1]=0: "
               << rresFooterSecondZero << "/" << records.size() << '\n';
 
@@ -289,6 +296,41 @@ int main(int argc, char** argv) {
                 static_cast<std::size_t>(record.offset),
                 20
             );
+        }
+    }
+
+    if (!rresCountMismatches.empty()) {
+        std::cout << "\nRRES count mismatches (first 32):\n";
+        const std::size_t n = std::min<std::size_t>(
+            32, rresCountMismatches.size());
+
+        for (std::size_t j = 0; j < n; ++j) {
+            const std::size_t i = rresCountMismatches[j];
+            const auto& record = records[i];
+            const auto* rres = findSection(record, "rres");
+
+            std::cout << "  record[" << i << "]"
+                      << " offset=0x" << std::hex << record.offset
+                      << std::dec;
+
+            if (record.hasHead) {
+                std::cout << " headN=" << record.head.sampleCount;
+            }
+
+            if (rres && rres->payloadSize >= 16) {
+                const std::size_t base =
+                    static_cast<std::size_t>(rres->payloadOffset);
+                const std::uint32_t countA =
+                    readU32LE(reader.bytes(), base + 8);
+                const std::uint32_t countB =
+                    readU32LE(reader.bytes(), base + 12);
+
+                std::cout << " countA=" << countA
+                          << " countB=" << countB
+                          << " rresPayload=" << rres->payloadSize;
+            }
+
+            std::cout << '\n';
         }
     }
 
