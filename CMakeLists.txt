@@ -26,10 +26,13 @@ else()
 endif()
 
 if (WIN32)
-    target_compile_definitions(nt2core PRIVATE NT2_PLATFORM_WINDOWS=1)
+    target_compile_definitions(nt2core PRIVATE
+        NT2_PLATFORM_WINDOWS=1
+        NT2CORE_BUILD_DLL=1
+    )
 
-    # MSVC otherwise sees a DLL with no exported unmanaged symbols and
-    # does not produce the import library required by nt2db_inspect.
+    # Exported API is explicitly annotated in public headers.
+    # Keep this enabled as a fallback for future free functions.
     set_target_properties(nt2core PROPERTIES
         WINDOWS_EXPORT_ALL_SYMBOLS ON
     )
