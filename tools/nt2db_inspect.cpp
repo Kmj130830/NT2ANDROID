@@ -122,6 +122,12 @@ int main(int argc, char** argv) {
 
     std::size_t rres04EqualsHarm04Plus256 = 0;
     std::size_t rres08EqualsHarm08 = 0;
+    std::size_t relationDiffZero = 0;
+    std::size_t relationDiff256 = 0;
+    std::size_t relationDiffOther = 0;
+    std::map<std::uint32_t, std::pair<std::size_t, std::size_t>> relationByHarm0C;
+    std::size_t harm08EqRres08WhenCountsEqual = 0;
+    std::size_t harm08EqRres08WhenCountsDiffer = 0;
 
     std::size_t rresCountAZero = 0;
     std::size_t rresCountAPowerOfTwo = 0;
@@ -271,11 +277,33 @@ int main(int argc, char** argv) {
 
                     ++rres04MinusHarm04Histogram[difference];
 
+                    if (difference == 0) {
+                        ++relationDiffZero;
+                    } else if (difference == 256) {
+                        ++relationDiff256;
+                    } else {
+                        ++relationDiffOther;
+                    }
+
+                    auto& relationPair = relationByHarm0C[
+                        readU32LE(reader.bytes(), harmBase + 12)
+                    ];
+                    if (difference == 0) {
+                        ++relationPair.first;
+                    } else if (difference == 256) {
+                        ++relationPair.second;
+                    }
+
                     if (difference == 256) {
                         ++rres04EqualsHarm04Plus256;
                     }
                     if (storedCountA == harm08) {
                         ++rres08EqualsHarm08;
+                        if (storedCountA == storedCountB) {
+                            ++harm08EqRres08WhenCountsEqual;
+                        } else {
+                            ++harm08EqRres08WhenCountsDiffer;
+                        }
                     }
                 }
 
@@ -525,6 +553,26 @@ int main(int argc, char** argv) {
 
     std::cout << "RRES +0x04 == HARM +0x04 + 256 : "
               << rres04EqualsHarm04Plus256 << "/" << records.size() << '\n';
+    std::cout << "RRES +0x04/HARM +0x04 relation classes:\n";
+    std::cout << "  difference == 0   : "
+              << relationDiffZero << "/" << records.size() << '\n';
+    std::cout << "  difference == 256 : "
+              << relationDiff256 << "/" << records.size() << '\n';
+    std::cout << "  other             : "
+              << relationDiffOther << "/" << records.size() << '\n';
+
+    std::cout << "\nRelation by HARM +0x0C (same,+256):\n";
+    for (const auto& item : relationByHarm0C) {
+        std::cout << "  harm0C=" << item.first
+                  << " : same=" << item.second.first
+                  << " +256=" << item.second.second << '\n';
+    }
+
+    std::cout << "\nRRES +0x08 == HARM +0x08 breakdown:\n";
+    std::cout << "  when RRES +0x08 == +0x0C : "
+              << harm08EqRres08WhenCountsEqual << '\n';
+    std::cout << "  when RRES +0x08 != +0x0C : "
+              << harm08EqRres08WhenCountsDiffer << '\n';
 
     std::cout << "RRES +0x08 == HARM +0x08 (direct check): "
               << rres08EqualsHarm08 << "/" << records.size() << '\n';
