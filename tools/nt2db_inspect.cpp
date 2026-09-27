@@ -135,6 +135,11 @@ int main(int argc, char** argv) {
     };
     std::map<std::uint32_t, Harm0CStats> harm0CFrequencyStats;
     std::map<std::uint32_t, std::pair<std::size_t, std::size_t>> relationByHarm0C;
+    std::size_t harm0CMatchesFloor16000 = 0;
+    std::size_t harm0CFormulaMismatches = 0;
+    double harmCutoffLowerBound = 0.0;
+    double harmCutoffUpperBound = 0.0;
+    bool harmCutoffBoundsInitialized = false;
     std::size_t harm08EqRres08WhenCountsEqual = 0;
     std::size_t harm08EqRres08WhenCountsDiffer = 0;
 
@@ -254,6 +259,12 @@ int main(int argc, char** argv) {
                 const double frequency = record.head.referenceFrequency;
                 const double product =
                     static_cast<double>(harm0C) * frequency;
+                const double formulaValue =
+                    std::floor(16000.0 / frequency);
+                const std::uint32_t expectedHarmonics =
+                    formulaValue >= 0.0
+                        ? static_cast<std::uint32_t>(formulaValue)
+                        : 0u;
 
                 ++stats.count;
                 stats.frequencySum += frequency;
@@ -265,6 +276,27 @@ int main(int argc, char** argv) {
                 } else {
                     stats.productMin = std::min(stats.productMin, product);
                     stats.productMax = std::max(stats.productMax, product);
+                }
+
+                if (harm0C == expectedHarmonics) {
+                    ++harm0CMatchesFloor16000;
+
+                    const double lower = product;
+                    const double upper =
+                        static_cast<double>(harm0C + 1u) * frequency;
+
+                    if (!harmCutoffBoundsInitialized) {
+                        harmCutoffLowerBound = lower;
+                        harmCutoffUpperBound = upper;
+                        harmCutoffBoundsInitialized = true;
+                    } else {
+                        harmCutoffLowerBound =
+                            std::max(harmCutoffLowerBound, lower);
+                        harmCutoffUpperBound =
+                            std::min(harmCutoffUpperBound, upper);
+                    }
+                } else {
+                    ++harm0CFormulaMismatches;
                 }
             }
         }
@@ -609,7 +641,19 @@ int main(int argc, char** argv) {
                   << '\n';
     }
 
-    std::cout << "\nRRES +0x08 == HARM +0x08 breakdown:\n";
+    std::cout << "\nHARM +0x0C == floor(16000 / referenceFrequency): "
+              << harm0CMatchesFloor16000 << "/" << records.size() << '\\n';
+    std::cout << "HARM cutoff bounds implied by all matching records: ";
+    if (harmCutoffBoundsInitialized) {
+        std::cout << harmCutoffLowerBound
+                  << " <= cutoff < " << harmCutoffUpperBound << '\\n';
+    } else {
+        std::cout << "not available\\n";
+    }
+    std::cout << "HARM formula mismatches: "
+              << harm0CFormulaMismatches << "/" << records.size() << '\\n';
+
+    std::cout << "\\nRRES +0x08 == HARM +0x08 breakdown:\\n";
     std::cout << "  when RRES +0x08 == +0x0C : "
               << harm08EqRres08WhenCountsEqual << '\n';
     std::cout << "  when RRES +0x08 != +0x0C : "
