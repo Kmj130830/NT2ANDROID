@@ -1,0 +1,24 @@
+name: core-build
+
+on:
+  push:
+  pull_request:
+
+jobs:
+  linux:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - name: Configure
+        run: cmake -S . -B build-linux -DNT2_BUILD_TESTS=ON
+      - name: Build
+        run: cmake --build build-linux --parallel
+
+  windows:
+    runs-on: windows-latest
+    steps:
+      - uses: actions/checkout@v4
+      - name: Configure
+        run: cmake -S . -B build-windows -DNT2_BUILD_TESTS=ON
+      - name: Build
+        run: cmake --build build-windows --config Release
