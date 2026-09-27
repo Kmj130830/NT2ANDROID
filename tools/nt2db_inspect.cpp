@@ -109,6 +109,13 @@ int main(int argc, char** argv) {
     std::size_t rresCountBEqualHead = 0;
     std::size_t rresCountsEqual = 0;
     std::size_t rresFooterSecondZero = 0;
+    std::size_t rresCountAZero = 0;
+    std::size_t rresCountAPowerOfTwo = 0;
+    std::size_t rresCountALessThan4096 = 0;
+    std::size_t rresCountAEqual4096 = 0;
+    std::uint32_t rresCountAMin = UINT32_MAX;
+    std::uint32_t rresCountAMax = 0;
+    std::uint64_t rresCountADifferenceSum = 0;
 
     std::map<std::uint32_t, std::size_t> versionHistogram;
     std::map<std::uint32_t, std::size_t> versionSizeHistogram;
@@ -185,6 +192,25 @@ int main(int argc, char** argv) {
                 const std::uint32_t storedCountB =
                     readU32LE(reader.bytes(), base + 12);
 
+                rresCountAMin = std::min(rresCountAMin, storedCountA);
+                rresCountAMax = std::max(rresCountAMax, storedCountA);
+                if (storedCountA == 0) {
+                    ++rresCountAZero;
+                }
+                if (storedCountA != 0
+                    && (storedCountA & (storedCountA - 1u)) == 0) {
+                    ++rresCountAPowerOfTwo;
+                }
+                if (storedCountA < 4096u) {
+                    ++rresCountALessThan4096;
+                } else if (storedCountA == 4096u) {
+                    ++rresCountAEqual4096;
+                }
+                if (storedCountB >= storedCountA) {
+                    rresCountADifferenceSum +=
+                        static_cast<std::uint64_t>(storedCountB - storedCountA);
+                }
+
                 if (storedCountA == n) {
                     ++rresCountAEqualHead;
                 }
@@ -240,6 +266,28 @@ int main(int argc, char** argv) {
               << rresCountsEqual << "/" << records.size() << '\n';
     std::cout << "rres footer u32[1]=0: "
               << rresFooterSecondZero << "/" << records.size() << '\n';
+
+    if (!records.empty()) {
+        const double averageDifference =
+            static_cast<double>(rresCountADifferenceSum)
+            / static_cast<double>(records.size());
+
+        std::cout << "\nRRES countA analysis:\n";
+        std::cout << "  min countA              : " << rresCountAMin << '\n';
+        std::cout << "  max countA              : " << rresCountAMax << '\n';
+        std::cout << "  countA == 0             : "
+                  << rresCountAZero << "/" << records.size() << '\n';
+        std::cout << "  countA < 4096           : "
+                  << rresCountALessThan4096 << "/" << records.size() << '\n';
+        std::cout << "  countA == 4096          : "
+                  << rresCountAEqual4096 << "/" << records.size() << '\n';
+        std::cout << "  countA is power-of-two  : "
+                  << rresCountAPowerOfTwo << "/" << records.size() << '\n';
+        std::cout << std::setprecision(10);
+        std::cout << "  average (countB-countA) : "
+                  << averageDifference << '\n';
+        std::cout << std::setprecision(6);
+    }
 
     std::cout << "\nVersion histogram:\n";
     for (const auto& item : versionHistogram) {
@@ -308,6 +356,7 @@ int main(int argc, char** argv) {
             const std::size_t i = rresCountMismatches[j];
             const auto& record = records[i];
             const auto* rres = findSection(record, "rres");
+            const auto* harm = findSection(record, "harm");
 
             std::cout << "  record[" << i << "]"
                       << " offset=0x" << std::hex << record.offset
@@ -327,7 +376,12 @@ int main(int argc, char** argv) {
 
                 std::cout << " countA=" << countA
                           << " countB=" << countB
+                          << " diff=" << (countB >= countA ? countB - countA : 0u)
                           << " rresPayload=" << rres->payloadSize;
+
+                if (harm) {
+                    std::cout << " harmPayload=" << harm->payloadSize;
+                }
             }
 
             std::cout << '\n';
