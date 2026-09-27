@@ -27,6 +27,12 @@ endif()
 
 if (WIN32)
     target_compile_definitions(nt2core PRIVATE NT2_PLATFORM_WINDOWS=1)
+
+    # MSVC otherwise sees a DLL with no exported unmanaged symbols and
+    # does not produce the import library required by nt2db_inspect.
+    set_target_properties(nt2core PROPERTIES
+        WINDOWS_EXPORT_ALL_SYMBOLS ON
+    )
 elseif (ANDROID)
     target_compile_definitions(nt2core PRIVATE NT2_PLATFORM_ANDROID=1)
 
