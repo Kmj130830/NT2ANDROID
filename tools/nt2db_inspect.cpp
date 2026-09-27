@@ -120,6 +120,16 @@ int main(int argc, char** argv) {
     std::map<std::uint32_t, std::size_t> versionHistogram;
     std::map<std::uint32_t, std::size_t> versionSizeHistogram;
     std::map<std::uint32_t, std::size_t> field08Histogram;
+    std::map<std::uint32_t, std::size_t> countAValueHistogram;
+    std::map<std::uint32_t, std::size_t> countDifferenceHistogram;
+
+    std::size_t countRatioZero = 0;
+    std::size_t countRatioUpTo25 = 0;
+    std::size_t countRatioUpTo50 = 0;
+    std::size_t countRatioUpTo75 = 0;
+    std::size_t countRatioUpTo90 = 0;
+    std::size_t countRatioUpTo99 = 0;
+    std::size_t countRatioBelow100 = 0;
 
     std::vector<std::size_t> lengthMismatches;
     std::vector<std::size_t> unusualVersions;
@@ -211,6 +221,33 @@ int main(int argc, char** argv) {
                         static_cast<std::uint64_t>(storedCountB - storedCountA);
                 }
 
+                ++countAValueHistogram[storedCountA];
+                if (storedCountB >= storedCountA) {
+                    ++countDifferenceHistogram[storedCountB - storedCountA];
+                }
+
+                if (storedCountB != 0) {
+                    const double ratio =
+                        static_cast<double>(storedCountA)
+                        / static_cast<double>(storedCountB);
+
+                    if (ratio == 0.0) {
+                        ++countRatioZero;
+                    } else if (ratio <= 0.25) {
+                        ++countRatioUpTo25;
+                    } else if (ratio <= 0.50) {
+                        ++countRatioUpTo50;
+                    } else if (ratio <= 0.75) {
+                        ++countRatioUpTo75;
+                    } else if (ratio <= 0.90) {
+                        ++countRatioUpTo90;
+                    } else if (ratio <= 0.99) {
+                        ++countRatioUpTo99;
+                    } else if (ratio < 1.0) {
+                        ++countRatioBelow100;
+                    }
+                }
+
                 if (storedCountA == n) {
                     ++rresCountAEqualHead;
                 }
@@ -288,6 +325,43 @@ int main(int argc, char** argv) {
                   << averageDifference << '\n';
         std::cout << std::setprecision(6);
     }
+
+    auto printTopHistogram = [](const std::string& title,
+                                const std::map<std::uint32_t, std::size_t>& histogram) {
+        std::vector<std::pair<std::uint32_t, std::size_t>> items(
+            histogram.begin(), histogram.end());
+
+        std::sort(
+            items.begin(),
+            items.end(),
+            [](const auto& a, const auto& b) {
+                if (a.second != b.second) {
+                    return a.second > b.second;
+                }
+                return a.first < b.first;
+            }
+        );
+
+        const std::size_t limit = std::min<std::size_t>(32, items.size());
+        std::cout << "\n" << title << " (top 32):\n";
+        for (std::size_t i = 0; i < limit; ++i) {
+            std::cout << "  " << items[i].first
+                      << " : " << items[i].second << '\n';
+        }
+    };
+
+    printTopHistogram("RRES countA values", countAValueHistogram);
+    printTopHistogram("RRES countB-countA values", countDifferenceHistogram);
+
+    std::cout << "\nRRES countA/countB ratio buckets:\n";
+    std::cout << "  ratio == 0       : " << countRatioZero << '\n';
+    std::cout << "  0 < ratio <= .25 : " << countRatioUpTo25 << '\n';
+    std::cout << "  .25 < ratio <= .50: " << countRatioUpTo50 << '\n';
+    std::cout << "  .50 < ratio <= .75: " << countRatioUpTo75 << '\n';
+    std::cout << "  .75 < ratio <= .90: " << countRatioUpTo90 << '\n';
+    std::cout << "  .90 < ratio <= .99: " << countRatioUpTo99 << '\n';
+    std::cout << "  .99 < ratio < 1  : " << countRatioBelow100 << '\n';
+    std::cout << "  ratio == 1       : " << rresCountCountsEqual << '\n';
 
     std::cout << "\nVersion histogram:\n";
     for (const auto& item : versionHistogram) {
