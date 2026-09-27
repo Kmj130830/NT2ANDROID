@@ -125,6 +125,15 @@ int main(int argc, char** argv) {
     std::size_t relationDiffZero = 0;
     std::size_t relationDiff256 = 0;
     std::size_t relationDiffOther = 0;
+    struct Harm0CStats {
+        std::size_t count = 0;
+        double frequencySum = 0.0;
+        double productSum = 0.0;
+        double productMin = 0.0;
+        double productMax = 0.0;
+        bool initialized = false;
+    };
+    std::map<std::uint32_t, Harm0CStats> harm0CFrequencyStats;
     std::map<std::uint32_t, std::pair<std::size_t, std::size_t>> relationByHarm0C;
     std::size_t harm08EqRres08WhenCountsEqual = 0;
     std::size_t harm08EqRres08WhenCountsDiffer = 0;
@@ -239,6 +248,25 @@ int main(int argc, char** argv) {
             ++harmField04Histogram[harm04];
             ++harmField08Histogram[harm08];
             ++harmField0CHistogram[harm0C];
+
+            if (record.hasHead && record.head.referenceFrequency > 0.0) {
+                auto& stats = harm0CFrequencyStats[harm0C];
+                const double frequency = record.head.referenceFrequency;
+                const double product =
+                    static_cast<double>(harm0C) * frequency;
+
+                ++stats.count;
+                stats.frequencySum += frequency;
+                stats.productSum += product;
+                if (!stats.initialized) {
+                    stats.productMin = product;
+                    stats.productMax = product;
+                    stats.initialized = true;
+                } else {
+                    stats.productMin = std::min(stats.productMin, product);
+                    stats.productMax = std::max(stats.productMax, product);
+                }
+            }
         }
 
         if (rres && record.hasHead) {
@@ -566,6 +594,19 @@ int main(int argc, char** argv) {
         std::cout << "  harm0C=" << item.first
                   << " : same=" << item.second.first
                   << " +256=" << item.second.second << '\n';
+    }
+
+    std::cout << "\nHARM +0x0C vs reference-frequency product:\n";
+    for (const auto& item : harm0CFrequencyStats) {
+        const auto& stats = item.second;
+        if (!stats.initialized || stats.count == 0) continue;
+        std::cout << "  harm0C=" << item.first
+                  << " count=" << stats.count
+                  << " avgFreq=" << (stats.frequencySum / static_cast<double>(stats.count))
+                  << " avgProduct=" << (stats.productSum / static_cast<double>(stats.count))
+                  << " productMin=" << stats.productMin
+                  << " productMax=" << stats.productMax
+                  << '\n';
     }
 
     std::cout << "\nRRES +0x08 == HARM +0x08 breakdown:\n";
