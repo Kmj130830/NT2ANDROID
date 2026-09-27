@@ -15,10 +15,15 @@ struct M9pSection {
     std::uint64_t payloadSize = 0;
 };
 
+struct M9pVersion {
+    std::uint32_t declaredSize = 0;
+    std::uint32_t value = 0;
+};
+
 struct M9pHead {
     std::uint32_t declaredSize = 0;
     std::uint32_t flags = 0;
-    float sampleRate = 0.0f;
+    float field08F32 = 0.0f;
     double referenceFrequency = 0.0;
     std::uint32_t sampleCount = 0;
 };
@@ -26,6 +31,10 @@ struct M9pHead {
 struct M9pRecord {
     std::uint64_t offset = 0;
     std::uint64_t endOffset = 0;
+    std::uint32_t declaredBodySize = 0;
+    bool lengthMatches = false;
+    bool hasVersion = false;
+    M9pVersion version;
     std::vector<M9pSection> sections;
     bool hasHead = false;
     M9pHead head;
