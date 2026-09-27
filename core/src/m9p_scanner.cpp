@@ -16,6 +16,13 @@ constexpr std::array<std::uint8_t, 4> kM9p = {
     static_cast<std::uint8_t>('@')
 };
 
+constexpr std::array<std::uint8_t, 4> kVer = {
+    static_cast<std::uint8_t>('v'),
+    static_cast<std::uint8_t>('e'),
+    static_cast<std::uint8_t>('r'),
+    static_cast<std::uint8_t>(' ')
+};
+
 constexpr std::array<std::uint8_t, 4> kHead = {
     static_cast<std::uint8_t>('h'),
     static_cast<std::uint8_t>('e'),
@@ -61,21 +68,30 @@ std::size_t findTag(
     return bytes.size();
 }
 
-std::uint32_t readU32LE(const std::vector<std::uint8_t>& bytes, std::size_t p) {
+std::uint32_t readU32LE(
+    const std::vector<std::uint8_t>& bytes,
+    std::size_t p
+) {
     return static_cast<std::uint32_t>(bytes[p])
         | (static_cast<std::uint32_t>(bytes[p + 1]) << 8)
         | (static_cast<std::uint32_t>(bytes[p + 2]) << 16)
         | (static_cast<std::uint32_t>(bytes[p + 3]) << 24);
 }
 
-float readF32LE(const std::vector<std::uint8_t>& bytes, std::size_t p) {
+float readF32LE(
+    const std::vector<std::uint8_t>& bytes,
+    std::size_t p
+) {
     const std::uint32_t bits = readU32LE(bytes, p);
     float value = 0.0f;
     std::memcpy(&value, &bits, sizeof(value));
     return value;
 }
 
-double readF64LE(const std::vector<std::uint8_t>& bytes, std::size_t p) {
+double readF64LE(
+    const std::vector<std::uint8_t>& bytes,
+    std::size_t p
+) {
     std::uint64_t bits =
         static_cast<std::uint64_t>(bytes[p])
         | (static_cast<std::uint64_t>(bytes[p + 1]) << 8)
@@ -135,7 +151,27 @@ std::vector<M9pRecord> M9pScanner::scan(
         record.offset = start;
         record.endOffset = end;
 
-        // The observed on-disk invariant is:
+        const std::size_t recordSize = end - start;
+
+        // Observed outer layout:
+        // M9P@ + uint32 bodySize + "ver " + uint32 size + uint32 version.
+        // bodySize matches recordSize - 16 in the supplied database.
+        if (start + 8 <= end) {
+            record.declaredBodySize = readU32LE(bytes, start + 4);
+            record.lengthMatches =
+                recordSize >= 16
+                && record.declaredBodySize == recordSize - 16;
+        }
+
+        const std::size_t verOffset = start + 8;
+        if (verOffset + 12 <= end && matches4(bytes, verOffset, kVer)) {
+            record.version.declaredSize = readU32LE(bytes, verOffset + 4);
+            if (record.version.declaredSize == 4) {
+                record.version.value = readU32LE(bytes, verOffset + 8);
+                record.hasVersion = true;
+            }
+        }
+
         // M9P@ + 0x14 bytes -> head tag.
         const std::size_t headOffset = start + 0x14;
         if (headOffset + 4 > end || !matches4(bytes, headOffset, kHead)) {
@@ -151,15 +187,9 @@ std::vector<M9pRecord> M9pScanner::scan(
             continue;
         }
 
-        // head payload:
-        // u32 declaredSize (=20 in the supplied DB)
-        // u32 flags/reserved (=0 in observed records)
-        // f32 sampleRate
-        // f64 referenceFrequency
-        // u32 sampleCount
         record.head.declaredSize = readU32LE(bytes, headPayload);
         record.head.flags = readU32LE(bytes, headPayload + 4);
-        record.head.sampleRate = readF32LE(bytes, headPayload + 8);
+        record.head.field08F32 = readF32LE(bytes, headPayload + 8);
         record.head.referenceFrequency = readF64LE(bytes, headPayload + 12);
         record.head.sampleCount = readU32LE(bytes, headPayload + 20);
         record.hasHead = true;
@@ -191,7 +221,7 @@ std::vector<M9pRecord> M9pScanner::scan(
         if (records.empty()) {
             *warning = "No M9P@ signatures were found.";
         } else if (malformed != 0) {
-            *warning = "Some M9P records did not match the currently observed "
+            *warning = "Some M9P records did not match the observed "
                        "head/harm/rres structural layout.";
         } else {
             warning->clear();
