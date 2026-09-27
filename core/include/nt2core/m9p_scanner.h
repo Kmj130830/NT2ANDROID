@@ -1,5 +1,7 @@
 #pragma once
 
+#include "nt2core/export.h"
+
 #include <cstdint>
 #include <string>
 #include <vector>
@@ -19,7 +21,7 @@ struct M9pRecord {
     std::vector<M9pSection> sections;
 };
 
-class M9pScanner {
+class NT2CORE_API M9pScanner {
 public:
     static std::vector<M9pRecord> scan(
         const std::vector<std::uint8_t>& bytes,
