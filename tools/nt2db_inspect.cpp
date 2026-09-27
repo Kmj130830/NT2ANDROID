@@ -361,7 +361,7 @@ int main(int argc, char** argv) {
     std::cout << "  .75 < ratio <= .90: " << countRatioUpTo90 << '\n';
     std::cout << "  .90 < ratio <= .99: " << countRatioUpTo99 << '\n';
     std::cout << "  .99 < ratio < 1  : " << countRatioBelow100 << '\n';
-    std::cout << "  ratio == 1       : " << rresCountCountsEqual << '\n';
+    std::cout << "  ratio == 1       : " << rresCountsEqual << '\n';
 
     std::cout << "\nVersion histogram:\n";
     for (const auto& item : versionHistogram) {
