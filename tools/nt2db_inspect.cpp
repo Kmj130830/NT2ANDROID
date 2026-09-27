@@ -437,6 +437,31 @@ int main(int argc, char** argv) {
         }
     }
 
+    auto printTopHistogram = [](const std::string& title,
+                                const std::map<std::uint32_t, std::size_t>& histogram) {
+        std::vector<std::pair<std::uint32_t, std::size_t>> items(
+            histogram.begin(), histogram.end());
+
+        std::sort(
+            items.begin(),
+            items.end(),
+            [](const auto& a, const auto& b) {
+                if (a.second != b.second) {
+                    return a.second > b.second;
+                }
+                return a.first < b.first;
+            }
+        );
+
+        const std::size_t limit = std::min<std::size_t>(32, items.size());
+        std::cout << "\n" << title << " (top 32):\n";
+        for (std::size_t i = 0; i < limit; ++i) {
+            std::cout << "  " << items[i].first
+                      << " : " << items[i].second << '\n';
+        }
+    };
+
+
     std::cout << "Structure valid    : "
               << structurallyValid << "/" << records.size() << '\n';
     std::cout << "Length field valid : "
@@ -507,29 +532,6 @@ int main(int argc, char** argv) {
         std::cout << std::setprecision(6);
     }
 
-    auto printTopHistogram = [](const std::string& title,
-                                const std::map<std::uint32_t, std::size_t>& histogram) {
-        std::vector<std::pair<std::uint32_t, std::size_t>> items(
-            histogram.begin(), histogram.end());
-
-        std::sort(
-            items.begin(),
-            items.end(),
-            [](const auto& a, const auto& b) {
-                if (a.second != b.second) {
-                    return a.second > b.second;
-                }
-                return a.first < b.first;
-            }
-        );
-
-        const std::size_t limit = std::min<std::size_t>(32, items.size());
-        std::cout << "\n" << title << " (top 32):\n";
-        for (std::size_t i = 0; i < limit; ++i) {
-            std::cout << "  " << items[i].first
-                      << " : " << items[i].second << '\n';
-        }
-    };
 
     printTopHistogram("RRES countA values", countAValueHistogram);
     printTopHistogram("RRES countB-countA values", countDifferenceHistogram);
