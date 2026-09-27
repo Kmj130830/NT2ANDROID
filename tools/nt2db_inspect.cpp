@@ -306,6 +306,9 @@ int main(int argc, char** argv) {
                   << record.offset << std::dec << '\n';
         std::cout << "  end    : 0x" << std::hex
                   << record.endOffset << std::dec << '\n';
+        if (record.isLastRecord) {
+            std::cout << "  trailing: " << record.trailingBytesAfterRecord << " bytes after declared record\n";
+        }
         std::cout << "  size   : "
                   << (record.endOffset - record.offset)
                   << " bytes\n";
