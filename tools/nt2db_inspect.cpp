@@ -131,6 +131,10 @@ int main(int argc, char** argv) {
     std::size_t countRatioUpTo99 = 0;
     std::size_t countRatioBelow100 = 0;
 
+    std::size_t residualTailAfterAAllZero = 0;
+    std::size_t residualTailAfterAHasNonZero = 0;
+    std::size_t residualNonZeroCountEqualA = 0;
+
     std::vector<std::size_t> lengthMismatches;
     std::vector<std::size_t> unusualVersions;
     std::vector<std::size_t> rresCountMismatches;
@@ -245,6 +249,56 @@ int main(int argc, char** argv) {
                         ++countRatioUpTo99;
                     } else if (ratio < 1.0) {
                         ++countRatioBelow100;
+                    }
+                }
+
+                if (layout && n > 0) {
+                    const std::size_t residualBase = base + 16u;
+                    std::size_t nonZeroCount = 0;
+                    std::size_t tailNonZeroCount = 0;
+                    std::int16_t tailMaxAbs = 0;
+
+                    for (std::size_t sample = 0; sample < n; ++sample) {
+                        const std::uint16_t raw =
+                            static_cast<std::uint16_t>(
+                                reader.bytes()[residualBase + sample * 2u]
+                            )
+                            | static_cast<std::uint16_t>(
+                                static_cast<std::uint16_t>(
+                                    reader.bytes()[residualBase + sample * 2u + 1u]
+                                ) << 8
+                            );
+
+                        const std::int16_t value =
+                            static_cast<std::int16_t>(raw);
+
+                        if (value != 0) {
+                            ++nonZeroCount;
+                        }
+
+                        if (sample >= storedCountA && value != 0) {
+                            ++tailNonZeroCount;
+                            const std::int32_t absValue =
+                                value == INT16_MIN
+                                    ? 32768
+                                    : (value < 0 ? -value : value);
+                            tailMaxAbs = static_cast<std::int16_t>(
+                                std::max<std::int32_t>(
+                                    static_cast<std::int32_t>(tailMaxAbs),
+                                    absValue
+                                )
+                            );
+                        }
+                    }
+
+                    if (tailNonZeroCount == 0) {
+                        ++residualTailAfterAAllZero;
+                    } else {
+                        ++residualTailAfterAHasNonZero;
+                    }
+
+                    if (nonZeroCount == storedCountA) {
+                        ++residualNonZeroCountEqualA;
                     }
                 }
 
@@ -363,6 +417,14 @@ int main(int argc, char** argv) {
     std::cout << "  .99 < ratio < 1  : " << countRatioBelow100 << '\n';
     std::cout << "  ratio == 1       : " << rresCountsEqual << '\n';
 
+    std::cout << "\nRRES residual/countA boundary analysis:\n";
+    std::cout << "  residual after countA all zero : "
+              << residualTailAfterAAllZero << "/" << records.size() << '\n';
+    std::cout << "  residual after countA has data : "
+              << residualTailAfterAHasNonZero << "/" << records.size() << '\n';
+    std::cout << "  total nonzero residuals == countA : "
+              << residualNonZeroCountEqualA << "/" << records.size() << '\n';
+
     std::cout << "\nVersion histogram:\n";
     for (const auto& item : versionHistogram) {
         std::cout << "  " << item.first
@@ -452,6 +514,49 @@ int main(int argc, char** argv) {
                           << " countB=" << countB
                           << " diff=" << (countB >= countA ? countB - countA : 0u)
                           << " rresPayload=" << rres->payloadSize;
+
+                if (rres->payloadSize == 16u
+                    + static_cast<std::size_t>(record.head.sampleCount) * 2u
+                    + 8u
+                    && countB >= countA) {
+                    const std::size_t residualBase = base + 16u;
+                    std::size_t tailNonZero = 0;
+                    std::int32_t tailMaxAbs = 0;
+                    std::size_t totalNonZero = 0;
+
+                    for (std::size_t sample = 0;
+                         sample < static_cast<std::size_t>(countB);
+                         ++sample) {
+                        const std::uint16_t raw =
+                            static_cast<std::uint16_t>(
+                                reader.bytes()[residualBase + sample * 2u]
+                            )
+                            | static_cast<std::uint16_t>(
+                                static_cast<std::uint16_t>(
+                                    reader.bytes()[residualBase + sample * 2u + 1u]
+                                ) << 8
+                            );
+                        const std::int16_t value =
+                            static_cast<std::int16_t>(raw);
+
+                        if (value != 0) {
+                            ++totalNonZero;
+                        }
+
+                        if (sample >= countA && value != 0) {
+                            ++tailNonZero;
+                            const std::int32_t absValue =
+                                value == INT16_MIN
+                                    ? 32768
+                                    : (value < 0 ? -value : value);
+                            tailMaxAbs = std::max(tailMaxAbs, absValue);
+                        }
+                    }
+
+                    std::cout << " tailNonZero=" << tailNonZero
+                              << " tailMaxAbs=" << tailMaxAbs
+                              << " totalNonZero=" << totalNonZero;
+                }
 
                 if (harm) {
                     std::cout << " harmPayload=" << harm->payloadSize;
