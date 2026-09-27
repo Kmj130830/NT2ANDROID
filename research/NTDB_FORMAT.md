@@ -8,31 +8,83 @@ The supplied database starts with the ASCII marker:
 
 A full scan found 12,528 occurrences of the M9P@ record signature.
 
+Every one of the 12,528 records currently matches the observed structural layout:
+
+    M9P@ + 0x14-byte prefix
+    head tag + 24-byte payload
+    harm tag + variable payload
+    rres tag + variable payload
+    next M9P@
+
 Observed record section labels:
-- ver
+- ver/prefix region
 - head
 - harm
 - rres
 
-## Confirmed observations
+## M9P record prefix
 
-The head section contains values that are consistent with:
-- sample rate
-- reference/base frequency
-- sample count
+The first "head" tag occurs exactly 0x14 (20) bytes after the M9P@ signature in all 12,528 records tested.
 
-One observed record:
-- sample rate: 44,100 Hz
-- reference frequency: approximately 195.9977 Hz
-- sample count: 12,118
+The bytes before "head" are therefore a fixed 20-byte per-record prefix for this database. Its internal "ver" encoding is not yet decoded.
 
-The rres section repeatedly shows a header followed by signed 16-bit data whose observed byte count is consistent with the sample-count field.
+## head payload
 
-## Unresolved
+"head" has a 24-byte payload.
 
-The exact record length-prefix rules and section-size encoding are not finalized.
+Observed byte layout:
 
-The harm section is not yet semantically decoded. Candidate interpretations include harmonic amplitudes, phases, spectral frames, or a combination.
+| Offset | Size | Current interpretation |
+|---:|---:|---|
+| 0x00 | 4 | declared size; observed value 20 |
+| 0x04 | 4 | flags/reserved; observed value 0 |
+| 0x08 | 4 | IEEE-754 little-endian float sample rate |
+| 0x0C | 8 | IEEE-754 little-endian double reference frequency |
+| 0x14 | 4 | unsigned sample count |
+
+Examples from the supplied database:
+
+    44,100.0 Hz
+    195.9977179908746 Hz
+    12,118 samples
+
+The reference-frequency field is especially strong evidence: treating bytes at head+0x0C as an IEEE-754 little-endian double gives exact musical base frequencies in multiple records, including approximately:
+
+    195.9977179908746 Hz
+    261.6255653005986 Hz
+    329.6275569128700 Hz
+    391.9954359817493 Hz
+
+These correspond to expected equal-temperament note frequencies, which independently supports the field interpretation.
+
+## rres
+
+For tested records, the rres payload consists of:
+
+    24-byte header
+    followed by signed 16-bit residual samples
+
+The residual byte count agrees with:
+
+    sampleCount * 2
+
+after subtracting the 24-byte rres header.
+
+For the first record:
+
+    sampleCount = 12,118
+    residual samples = 12,118
+    residual bytes = 24,236
+    rres payload = 24,260 bytes
+    rres header = 24 bytes
+
+The 24-byte rres header field meanings are not yet decoded.
+
+## harm
+
+The harm section has a variable payload length and occurs between head and rres.
+
+Its semantic representation is not yet confirmed. The current evidence suggests it is likely analysis/spectral data, but the exact element size, frame structure, scaling, and meaning must be established from repeated byte patterns and reference behavior.
 
 ## Versioning evidence
 
