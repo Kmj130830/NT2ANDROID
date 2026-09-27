@@ -144,29 +144,66 @@ std::vector<M9pRecord> M9pScanner::scan(
 
     for (std::size_t i = 0; i < offsets.size(); ++i) {
         const std::size_t start = offsets[i];
-        const std::size_t end =
+        const std::size_t markerNext =
             (i + 1 < offsets.size()) ? offsets[i + 1] : bytes.size();
+        const bool isLast = i + 1 == offsets.size();
 
         M9pRecord record;
         record.offset = start;
-        record.endOffset = end;
+        record.isLastRecord = isLast;
 
-        const std::size_t recordSize = end - start;
-
-        if (start + 8 <= end) {
+        if (start + 8 <= bytes.size()) {
             record.declaredBodySize = readU32LE(bytes, start + 4);
-            record.lengthMatches =
-                recordSize >= 16
-                && record.declaredBodySize == recordSize - 16;
+
+            if (record.declaredBodySize <=
+                bytes.size() - start - 16) {
+                record.declaredEndOffset =
+                    start + 16u + record.declaredBodySize;
+
+                record.nextMarkerMatchesDeclaredEnd =
+                    record.declaredEndOffset == markerNext;
+
+                if (isLast) {
+                    record.trailingBytesAfterRecord =
+                        markerNext >= record.declaredEndOffset
+                            ? markerNext - record.declaredEndOffset
+                            : 0;
+                }
+
+                // Prefer the record's own declared size. This is important
+                // for the last record because NTDB may contain trailing data
+                // after the final M9P record.
+                record.endOffset = record.declaredEndOffset;
+                record.lengthMatches =
+                    record.endOffset >= start
+                    && record.endOffset <= bytes.size()
+                    && (!isLast
+                        ? record.nextMarkerMatchesDeclaredEnd
+                        : true);
+            } else {
+                // Invalid declared end. Fall back to the next marker so the
+                // inspection tool can still report the damaged record.
+                record.endOffset = markerNext;
+                record.lengthMatches = false;
+            }
+        } else {
+            record.endOffset = markerNext;
         }
+
+        if (record.endOffset <= start || record.endOffset > bytes.size()) {
+            record.endOffset = markerNext;
+            record.lengthMatches = false;
+        }
+
+        const std::size_t end = static_cast<std::size_t>(record.endOffset);
 
         const std::size_t verOffset = start + 8;
         if (verOffset + 8 <= end && matches4(bytes, verOffset, kVer)) {
             record.version.tagPresent = true;
             record.version.declaredSize = readU32LE(bytes, verOffset + 4);
 
-            if (record.version.declaredSize == 4
-                && verOffset + 12 <= end) {
+            if (record.version.declaredSize <= end - (verOffset + 8)
+                && record.version.declaredSize == 4) {
                 record.version.value = readU32LE(bytes, verOffset + 8);
                 record.version.hasValue = true;
             }
