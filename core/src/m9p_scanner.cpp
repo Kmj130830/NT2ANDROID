@@ -3,6 +3,7 @@
 #include <algorithm>
 #include <array>
 #include <cstddef>
+#include <cstring>
 #include <utility>
 
 namespace nt2 {
@@ -60,6 +61,36 @@ std::size_t findTag(
     return bytes.size();
 }
 
+std::uint32_t readU32LE(const std::vector<std::uint8_t>& bytes, std::size_t p) {
+    return static_cast<std::uint32_t>(bytes[p])
+        | (static_cast<std::uint32_t>(bytes[p + 1]) << 8)
+        | (static_cast<std::uint32_t>(bytes[p + 2]) << 16)
+        | (static_cast<std::uint32_t>(bytes[p + 3]) << 24);
+}
+
+float readF32LE(const std::vector<std::uint8_t>& bytes, std::size_t p) {
+    const std::uint32_t bits = readU32LE(bytes, p);
+    float value = 0.0f;
+    std::memcpy(&value, &bits, sizeof(value));
+    return value;
+}
+
+double readF64LE(const std::vector<std::uint8_t>& bytes, std::size_t p) {
+    std::uint64_t bits =
+        static_cast<std::uint64_t>(bytes[p])
+        | (static_cast<std::uint64_t>(bytes[p + 1]) << 8)
+        | (static_cast<std::uint64_t>(bytes[p + 2]) << 16)
+        | (static_cast<std::uint64_t>(bytes[p + 3]) << 24)
+        | (static_cast<std::uint64_t>(bytes[p + 4]) << 32)
+        | (static_cast<std::uint64_t>(bytes[p + 5]) << 40)
+        | (static_cast<std::uint64_t>(bytes[p + 6]) << 48)
+        | (static_cast<std::uint64_t>(bytes[p + 7]) << 56);
+
+    double value = 0.0;
+    std::memcpy(&value, &bits, sizeof(value));
+    return value;
+}
+
 void addSection(
     M9pRecord& record,
     const char* tag,
@@ -104,9 +135,8 @@ std::vector<M9pRecord> M9pScanner::scan(
         record.offset = start;
         record.endOffset = end;
 
-        // The first eight records in the supplied database all put "head"
-        // exactly 0x14 bytes after M9P@. Keep this as an observed structural
-        // invariant and verify it rather than searching the entire record.
+        // The observed on-disk invariant is:
+        // M9P@ + 0x14 bytes -> head tag.
         const std::size_t headOffset = start + 0x14;
         if (headOffset + 4 > end || !matches4(bytes, headOffset, kHead)) {
             ++malformed;
@@ -114,7 +144,27 @@ std::vector<M9pRecord> M9pScanner::scan(
             continue;
         }
 
-        const std::size_t harmOffset = headOffset + 4 + 24;
+        const std::size_t headPayload = headOffset + 4;
+        if (headPayload + 24 > end) {
+            ++malformed;
+            records.push_back(std::move(record));
+            continue;
+        }
+
+        // head payload:
+        // u32 declaredSize (=20 in the supplied DB)
+        // u32 flags/reserved (=0 in observed records)
+        // f32 sampleRate
+        // f64 referenceFrequency
+        // u32 sampleCount
+        record.head.declaredSize = readU32LE(bytes, headPayload);
+        record.head.flags = readU32LE(bytes, headPayload + 4);
+        record.head.sampleRate = readF32LE(bytes, headPayload + 8);
+        record.head.referenceFrequency = readF64LE(bytes, headPayload + 12);
+        record.head.sampleCount = readU32LE(bytes, headPayload + 20);
+        record.hasHead = true;
+
+        const std::size_t harmOffset = headPayload + 24;
         if (harmOffset + 4 > end || !matches4(bytes, harmOffset, kHarm)) {
             ++malformed;
             records.push_back(std::move(record));
