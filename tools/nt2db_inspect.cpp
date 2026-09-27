@@ -252,6 +252,10 @@ int main(int argc, char** argv) {
                     readU32LE(reader.bytes(), base);
                 const std::uint32_t storedUnknown0 =
                     readU32LE(reader.bytes(), base + 4);
+                const std::uint32_t storedCountA =
+                    readU32LE(reader.bytes(), base + 8);
+                const std::uint32_t storedCountB =
+                    readU32LE(reader.bytes(), base + 12);
 
                 if (harmForStats && harmForStats->payloadSize >= 12) {
                     const std::size_t harmBase =
@@ -280,11 +284,6 @@ int main(int argc, char** argv) {
                 if (storedSize + 12u == payload) {
                     ++rresSizeFieldMatch;
                 }
-
-                const std::uint32_t storedCountA =
-                    readU32LE(reader.bytes(), base + 8);
-                const std::uint32_t storedCountB =
-                    readU32LE(reader.bytes(), base + 12);
 
                 const auto* harm = findSection(record, "harm");
                 if (harm && harm->payloadSize >= 12) {
@@ -464,7 +463,7 @@ int main(int argc, char** argv) {
     }
 
     auto printTopHistogram = [](const std::string& title,
-                                const std::map<std::uint32_t, std::size_t>& histogram) {
+                                const auto& histogram) {
         std::vector<std::pair<std::uint32_t, std::size_t>> items(
             histogram.begin(), histogram.end());
 
