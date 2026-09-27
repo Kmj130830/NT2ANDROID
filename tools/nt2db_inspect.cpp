@@ -256,7 +256,6 @@ int main(int argc, char** argv) {
                     const std::size_t residualBase = base + 16u;
                     std::size_t nonZeroCount = 0;
                     std::size_t tailNonZeroCount = 0;
-                    std::int16_t tailMaxAbs = 0;
 
                     for (std::size_t sample = 0; sample < n; ++sample) {
                         const std::uint16_t raw =
@@ -278,16 +277,6 @@ int main(int argc, char** argv) {
 
                         if (sample >= storedCountA && value != 0) {
                             ++tailNonZeroCount;
-                            const std::int32_t absValue =
-                                value == INT16_MIN
-                                    ? 32768
-                                    : (value < 0 ? -value : value);
-                            tailMaxAbs = static_cast<std::int16_t>(
-                                std::max<std::int32_t>(
-                                    static_cast<std::int32_t>(tailMaxAbs),
-                                    absValue
-                                )
-                            );
                         }
                     }
 
