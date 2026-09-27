@@ -130,6 +130,17 @@ int main(int argc, char** argv) {
     std::size_t countRatioUpTo90 = 0;
     std::size_t countRatioUpTo99 = 0;
     std::size_t countRatioBelow100 = 0;
+    std::size_t rresCountALessEqualB = 0;
+
+    std::size_t diffDiv441Exact = 0;
+    std::size_t diffNear512 = 0;
+    std::size_t diffNear1024 = 0;
+    std::size_t diffNear1280 = 0;
+    std::size_t diffNear1536 = 0;
+    std::size_t diffNear2048 = 0;
+    std::size_t diffNear2304 = 0;
+    std::size_t diffNear2560 = 0;
+    std::size_t diffNear3328 = 0;
 
     std::size_t residualTailAfterAAllZero = 0;
     std::size_t residualTailAfterAHasNonZero = 0;
@@ -223,6 +234,36 @@ int main(int argc, char** argv) {
                 if (storedCountB >= storedCountA) {
                     rresCountADifferenceSum +=
                         static_cast<std::uint64_t>(storedCountB - storedCountA);
+                }
+
+                if (storedCountB >= storedCountA) {
+                    ++rresCountALessEqualB;
+
+                    const std::uint32_t diff =
+                        storedCountB - storedCountA;
+
+                    if (diff != 0 && diff % 441u == 0) {
+                        ++diffDiv441Exact;
+                    }
+
+                    auto nearValue = [](std::uint32_t value,
+                                        std::uint32_t target,
+                                        std::uint32_t tolerance) {
+                        const std::uint32_t delta =
+                            value >= target ? value - target : target - value;
+                        return delta <= tolerance;
+                    };
+
+                    if (diff != 0) {
+                        if (nearValue(diff, 512u, 2u)) ++diffNear512;
+                        if (nearValue(diff, 1024u, 2u)) ++diffNear1024;
+                        if (nearValue(diff, 1280u, 2u)) ++diffNear1280;
+                        if (nearValue(diff, 1536u, 2u)) ++diffNear1536;
+                        if (nearValue(diff, 2048u, 2u)) ++diffNear2048;
+                        if (nearValue(diff, 2304u, 2u)) ++diffNear2304;
+                        if (nearValue(diff, 2560u, 3u)) ++diffNear2560;
+                        if (nearValue(diff, 3328u, 2u)) ++diffNear3328;
+                    }
                 }
 
                 ++countAValueHistogram[storedCountA];
@@ -406,6 +447,28 @@ int main(int argc, char** argv) {
     std::cout << "  .99 < ratio < 1  : " << countRatioBelow100 << '\n';
     std::cout << "  ratio == 1       : " << rresCountsEqual << '\n';
 
+    std::cout << "\nRRES count difference alignment:\n";
+    std::cout << "  countA <= countB       : "
+              << rresCountALessEqualB << "/" << records.size() << '\n';
+    std::cout << "  diff divisible by 441  : "
+              << diffDiv441Exact << "/" << records.size() << '\n';
+    std::cout << "  diff ~= 512            : "
+              << diffNear512 << "/" << records.size() << '\n';
+    std::cout << "  diff ~= 1024           : "
+              << diffNear1024 << "/" << records.size() << '\n';
+    std::cout << "  diff ~= 1280           : "
+              << diffNear1280 << "/" << records.size() << '\n';
+    std::cout << "  diff ~= 1536           : "
+              << diffNear1536 << "/" << records.size() << '\n';
+    std::cout << "  diff ~= 2048           : "
+              << diffNear2048 << "/" << records.size() << '\n';
+    std::cout << "  diff ~= 2304           : "
+              << diffNear2304 << "/" << records.size() << '\n';
+    std::cout << "  diff ~= 2560           : "
+              << diffNear2560 << "/" << records.size() << '\n';
+    std::cout << "  diff ~= 3328           : "
+              << diffNear3328 << "/" << records.size() << '\n';
+
     std::cout << "\nRRES residual/countA boundary analysis:\n";
     std::cout << "  residual after countA all zero : "
               << residualTailAfterAAllZero << "/" << records.size() << '\n';
@@ -499,9 +562,15 @@ int main(int argc, char** argv) {
                 const std::uint32_t countB =
                     readU32LE(reader.bytes(), base + 12);
 
+                const std::uint32_t diff =
+                    countB >= countA ? countB - countA : 0u;
+
                 std::cout << " countA=" << countA
                           << " countB=" << countB
-                          << " diff=" << (countB >= countA ? countB - countA : 0u)
+                          << " diff=" << diff
+                          << " diffMs=" << std::setprecision(8)
+                          << (static_cast<double>(diff) / 44.1)
+                          << std::setprecision(6)
                           << " rresPayload=" << rres->payloadSize;
 
                 if (rres->payloadSize == 16u
