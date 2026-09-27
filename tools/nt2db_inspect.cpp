@@ -118,6 +118,10 @@ int main(int argc, char** argv) {
     std::map<std::uint32_t, std::size_t> harmField04Histogram;
     std::map<std::uint32_t, std::size_t> harmField08Histogram;
     std::map<std::uint32_t, std::size_t> harmField0CHistogram;
+    std::map<std::int64_t, std::size_t> rres04MinusHarm04Histogram;
+
+    std::size_t rres04EqualsHarm04Plus256 = 0;
+    std::size_t rres08EqualsHarm08 = 0;
 
     std::size_t rresCountAZero = 0;
     std::size_t rresCountAPowerOfTwo = 0;
@@ -248,6 +252,28 @@ int main(int argc, char** argv) {
                     readU32LE(reader.bytes(), base);
                 const std::uint32_t storedUnknown0 =
                     readU32LE(reader.bytes(), base + 4);
+
+                if (harmForStats && harmForStats->payloadSize >= 12) {
+                    const std::size_t harmBase =
+                        static_cast<std::size_t>(harmForStats->payloadOffset);
+                    const std::uint32_t harm04 =
+                        readU32LE(reader.bytes(), harmBase + 4);
+                    const std::uint32_t harm08 =
+                        readU32LE(reader.bytes(), harmBase + 8);
+
+                    const std::int64_t difference =
+                        static_cast<std::int64_t>(storedUnknown0)
+                        - static_cast<std::int64_t>(harm04);
+
+                    ++rres04MinusHarm04Histogram[difference];
+
+                    if (difference == 256) {
+                        ++rres04EqualsHarm04Plus256;
+                    }
+                    if (storedCountA == harm08) {
+                        ++rres08EqualsHarm08;
+                    }
+                }
 
                 ++rresUnknown0Histogram[storedUnknown0];
 
@@ -496,6 +522,13 @@ int main(int argc, char** argv) {
     printTopHistogram("HARM +0x04 values", harmField04Histogram);
     printTopHistogram("HARM +0x08 values", harmField08Histogram);
     printTopHistogram("HARM +0x0C values", harmField0CHistogram);
+    printTopHistogram("RRES +0x04 minus HARM +0x04", rres04MinusHarm04Histogram);
+
+    std::cout << "RRES +0x04 == HARM +0x04 + 256 : "
+              << rres04EqualsHarm04Plus256 << "/" << records.size() << '\n';
+
+    std::cout << "RRES +0x08 == HARM +0x08 (direct check): "
+              << rres08EqualsHarm08 << "/" << records.size() << '\n';
 
     std::cout << "HARM/RRES shared-field correlation (either RRES +0x08 or +0x0C): "
               << harmHeaderCorrelationEither << "/" << records.size() << '\n';
