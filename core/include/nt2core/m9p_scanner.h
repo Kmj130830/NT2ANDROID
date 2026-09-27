@@ -33,8 +33,12 @@ struct M9pHead {
 struct M9pRecord {
     std::uint64_t offset = 0;
     std::uint64_t endOffset = 0;
+    std::uint64_t declaredEndOffset = 0;
     std::uint32_t declaredBodySize = 0;
     bool lengthMatches = false;
+    bool nextMarkerMatchesDeclaredEnd = false;
+    bool isLastRecord = false;
+    std::uint64_t trailingBytesAfterRecord = 0;
     M9pVersion version;
     std::vector<M9pSection> sections;
     bool hasHead = false;
