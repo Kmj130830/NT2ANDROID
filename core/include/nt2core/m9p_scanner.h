@@ -16,7 +16,9 @@ struct M9pSection {
 };
 
 struct M9pVersion {
+    bool tagPresent = false;
     std::uint32_t declaredSize = 0;
+    bool hasValue = false;
     std::uint32_t value = 0;
 };
 
@@ -33,7 +35,6 @@ struct M9pRecord {
     std::uint64_t endOffset = 0;
     std::uint32_t declaredBodySize = 0;
     bool lengthMatches = false;
-    bool hasVersion = false;
     M9pVersion version;
     std::vector<M9pSection> sections;
     bool hasHead = false;
