@@ -8,19 +8,14 @@ The supplied database starts with the ASCII marker:
 
 A full scan found 12,528 occurrences of the M9P@ record signature.
 
-Every one of the 12,528 records currently matches the observed structural layout:
+The records use the following observed structure:
 
     M9P@ + 0x14-byte prefix
     head tag + 24-byte payload
     harm tag + variable payload
     rres tag + variable payload
-    next M9P@
 
-Observed record section labels:
-- ver/prefix region
-- head
-- harm
-- rres
+The final M9P record is not necessarily the end of the NTDB file. The record declares its own body size, and the database contains additional trailing data after the final M9P record.
 
 ## M9P record prefix
 
@@ -36,13 +31,15 @@ The observed prefix layout is:
 | 0x0C | 4 | uint32 version payload size; observed 4 |
 | 0x10 | 4 | uint32 M9P format version |
 
-The body-size field matches:
+For normal records, the body-size field satisfies:
 
-    record_size - 16
+    record_size = 16 + bodySize
 
-for the records inspected.
+The final record is a useful confirmation: its declared body size is 43,374 bytes, giving a record end at 0x1AADF625. The NTDB file itself continues for several MiB after that position, so the trailing bytes are database-level data rather than part of the final M9P record.
 
-The version payload is:
+## Version field
+
+The version payload in the majority of records is:
 
     2a ff 34 01
 
@@ -50,7 +47,9 @@ Interpreted as little-endian uint32:
 
     0x0134ff2a = 20250410
 
-This exactly matches the M9P20250410 loader/decoder generation observed in the reference Windows DLL. This is strong evidence that the supplied database uses the M9P20250410 record format.
+The database contains 12,523 records with version 20250410 and 5 records with version 20241209. Those five older-format records occur contiguously at record indices 5953 through 5957.
+
+Both values correspond to decoder/loader generations observed in the reference Windows DLL.
 
 ## head payload
 
@@ -66,9 +65,9 @@ Observed byte layout:
 | 0x0C | 8 | IEEE-754 little-endian double reference frequency |
 | 0x14 | 4 | unsigned sample count |
 
-The previous assumption that offset 0x08 was sample rate was incorrect. It is 7.172912598 in the displayed records, not 44,100 Hz.
+The previous assumption that offset 0x08 was sample rate was incorrect. It is 7.172912598 in every displayed record, and the inspector reports exactly one distinct value across the database.
 
-The reference-frequency field is especially strong evidence: treating bytes at head+0x0C as an IEEE-754 little-endian double gives exact musical base frequencies in multiple records, including approximately:
+The reference-frequency field is strong evidence: treating bytes at head+0x0C as an IEEE-754 little-endian double gives musical frequencies including:
 
     195.9977179908746 Hz
     261.6255653005986 Hz
@@ -76,65 +75,51 @@ The reference-frequency field is especially strong evidence: treating bytes at h
     391.9954359817493 Hz
     523.2511306 Hz
 
-The source sample rate is not yet located in this per-record field and should not be assumed to be the value at offset 0x08.
+The source sample rate is not identified by this field.
 
 ## rres
 
-The current first-24-byte observations do NOT justify calling the entire 24 bytes a header.
+The observed rres payload has a strong size relationship:
 
-Examples:
+    rres_payload_size = 16 + sampleCount*2 + 8
 
-    rres payload = 24,260 bytes
+for almost all records inspected. The final-record boundary must use the M9P record's declared size rather than the physical end of the NTDB file.
+
+The first 16 bytes of a typical rres payload are:
+
+    uint32 storedSize
+    uint32 zero/reserved
+    uint32 sampleCount
+    uint32 sampleCount
+
+For record 0:
+
+    storedSize  = 24,248
     sampleCount = 12,118
-    sampleCount * 2 = 24,236 bytes
+    rres payload = 24,260
 
-The first four rres payload bytes are:
+and:
 
-    b8 5e 00 00
+    storedSize + 12 = rres payload size
 
-which is 24,248 as little-endian uint32, i.e.:
+The candidate residual region is:
 
-    residual_bytes + 12
+    offset +0x10
+    sampleCount signed 16-bit values
+    then an 8-byte trailer
 
-The next fields observed in the first record are:
+The residual/trailer boundary is therefore:
 
-    +0x00 : 24248
-    +0x04 : 0
-    +0x08 : 12118
-    +0x0C : 12118
-    +0x10 : f8 ff 1b 00 0d 00 f5 ff ...
+    +0x10 through +0x10 + sampleCount*2
+    trailer immediately after
 
-The values at +0x10 onward look consistent with signed 16-bit residual samples.
-
-There is therefore a strong candidate layout of:
-
-    16-byte leading rres metadata
-    sampleCount signed 16-bit residual values
-    8 trailing bytes
-
-but the exact meaning of the leading size field and the trailing 8 bytes is not yet confirmed.
-
-The next inspection step prints both the first 16 bytes and the last 16 bytes of rres and verifies:
-
-    16 + sampleCount*2 + 8 == rres_payload_size
-
-before assigning semantic names.
+The exact semantics of storedSize, the duplicate sampleCount fields, and the 8-byte trailer are not yet confirmed.
 
 ## harm
 
 The harm section has a variable payload length and occurs between head and rres.
 
-Its semantic representation is not yet confirmed. The current evidence suggests it is likely analysis/spectral data, but the exact element size, frame structure, scaling, and meaning must be established from repeated byte patterns and reference behavior.
-
-## Versioning evidence
-
-The reference Windows DLL contains multiple M9P decoder/loader names:
-- M9P20220801
-- M9P20221109
-- M9P20241209
-- M9P20250410
-
-The supplied database's per-record version field is 20250410, matching the newest observed decoder generation.
+Its semantic representation is not yet confirmed. It is likely analysis/spectral information, but the exact element size, frame structure, scaling, and meaning must be established from repeated patterns and reference behavior.
 
 ## Research discipline
 
