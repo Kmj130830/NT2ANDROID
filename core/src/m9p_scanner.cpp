@@ -153,9 +153,6 @@ std::vector<M9pRecord> M9pScanner::scan(
 
         const std::size_t recordSize = end - start;
 
-        // Observed outer layout:
-        // M9P@ + uint32 bodySize + "ver " + uint32 size + uint32 version.
-        // bodySize matches recordSize - 16 in the supplied database.
         if (start + 8 <= end) {
             record.declaredBodySize = readU32LE(bytes, start + 4);
             record.lengthMatches =
@@ -164,15 +161,17 @@ std::vector<M9pRecord> M9pScanner::scan(
         }
 
         const std::size_t verOffset = start + 8;
-        if (verOffset + 12 <= end && matches4(bytes, verOffset, kVer)) {
+        if (verOffset + 8 <= end && matches4(bytes, verOffset, kVer)) {
+            record.version.tagPresent = true;
             record.version.declaredSize = readU32LE(bytes, verOffset + 4);
-            if (record.version.declaredSize == 4) {
+
+            if (record.version.declaredSize == 4
+                && verOffset + 12 <= end) {
                 record.version.value = readU32LE(bytes, verOffset + 8);
-                record.hasVersion = true;
+                record.version.hasValue = true;
             }
         }
 
-        // M9P@ + 0x14 bytes -> head tag.
         const std::size_t headOffset = start + 0x14;
         if (headOffset + 4 > end || !matches4(bytes, headOffset, kHead)) {
             ++malformed;
