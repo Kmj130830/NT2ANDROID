@@ -108,6 +108,10 @@ int main(int argc, char** argv) {
     std::size_t rresCountAEqualHead = 0;
     std::size_t rresCountBEqualHead = 0;
     std::size_t rresCountsEqual = 0;
+    std::size_t rresField08MatchesHarm04 = 0;
+    std::size_t rresField08MatchesHarm08 = 0;
+    std::size_t rresField0CMatchesHarm04 = 0;
+    std::size_t rresField0CMatchesHarm08 = 0;
     std::size_t rresFooterSecondZero = 0;
     std::size_t rresCountAZero = 0;
     std::size_t rresCountAPowerOfTwo = 0;
@@ -222,6 +226,29 @@ int main(int argc, char** argv) {
                     readU32LE(reader.bytes(), base + 8);
                 const std::uint32_t storedCountB =
                     readU32LE(reader.bytes(), base + 12);
+
+                const auto* harm = findSection(record, "harm");
+                if (harm && harm->payloadSize >= 12) {
+                    const std::size_t harmBase =
+                        static_cast<std::size_t>(harm->payloadOffset);
+                    const std::uint32_t harm04 =
+                        readU32LE(reader.bytes(), harmBase + 4);
+                    const std::uint32_t harm08 =
+                        readU32LE(reader.bytes(), harmBase + 8);
+
+                    if (storedCountA == harm04) {
+                        ++rresField08MatchesHarm04;
+                    }
+                    if (storedCountA == harm08) {
+                        ++rresField08MatchesHarm08;
+                    }
+                    if (storedCountB == harm04) {
+                        ++rresField0CMatchesHarm04;
+                    }
+                    if (storedCountB == harm08) {
+                        ++rresField0CMatchesHarm08;
+                    }
+                }
 
                 rresCountAMin = std::min(rresCountAMin, storedCountA);
                 rresCountAMax = std::max(rresCountAMax, storedCountA);
@@ -396,10 +423,20 @@ int main(int argc, char** argv) {
               << rresCountAEqualHead << "/" << records.size() << '\n';
     std::cout << "rres countB=N       : "
               << rresCountBEqualHead << "/" << records.size() << '\n';
-    std::cout << "rres countA=countB  : "
+    std::cout << "rres field+08==+0C   : "
               << rresCountsEqual << "/" << records.size() << '\n';
     std::cout << "rres footer u32[1]=0: "
               << rresFooterSecondZero << "/" << records.size() << '\n';
+
+    std::cout << "\nRRES <-> HARM metadata correlation:\n";
+    std::cout << "  RRES +0x08 == HARM +0x04 : "
+              << rresField08MatchesHarm04 << "/" << records.size() << '\n';
+    std::cout << "  RRES +0x08 == HARM +0x08 : "
+              << rresField08MatchesHarm08 << "/" << records.size() << '\n';
+    std::cout << "  RRES +0x0C == HARM +0x04 : "
+              << rresField0CMatchesHarm04 << "/" << records.size() << '\n';
+    std::cout << "  RRES +0x0C == HARM +0x08 : "
+              << rresField0CMatchesHarm08 << "/" << records.size() << '\n';
 
     if (!records.empty()) {
         const double averageDifference =
@@ -589,8 +626,8 @@ int main(int argc, char** argv) {
                 const std::uint32_t diff =
                     countB >= countA ? countB - countA : 0u;
 
-                std::cout << " countA=" << countA
-                          << " countB=" << countB
+                std::cout << " field08=" << countA
+                          << " field0C=" << countB
                           << " diff=" << diff
                           << " diffMs=" << std::setprecision(8)
                           << (static_cast<double>(diff) / 44.1)
