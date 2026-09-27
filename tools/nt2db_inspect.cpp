@@ -5,10 +5,22 @@
 #include <cstdint>
 #include <iomanip>
 #include <iostream>
+#include <map>
+#include <set>
 #include <string>
 #include <vector>
 
 namespace {
+
+std::uint32_t readU32LE(
+    const std::vector<std::uint8_t>& bytes,
+    std::size_t offset
+) {
+    return static_cast<std::uint32_t>(bytes[offset])
+        | (static_cast<std::uint32_t>(bytes[offset + 1]) << 8)
+        | (static_cast<std::uint32_t>(bytes[offset + 2]) << 16)
+        | (static_cast<std::uint32_t>(bytes[offset + 3]) << 24);
+}
 
 void printHex(
     const std::vector<std::uint8_t>& bytes,
@@ -29,13 +41,24 @@ void printHex(
 
 void printHead(const nt2::M9pHead& head) {
     std::cout << "    declared : " << head.declaredSize << " bytes\n";
-    std::cout << "    flags    : 0x" << std::hex << head.flags << std::dec << '\n';
+    std::cout << "    flags    : 0x" << std::hex << head.flags
+              << std::dec << '\n';
     std::cout << std::setprecision(10);
     std::cout << "    field+08 : " << head.field08F32 << " (float)\n";
     std::cout << "    referenceFrequency : "
               << head.referenceFrequency << " Hz\n";
     std::cout << "    sampleCount : " << head.sampleCount << '\n';
     std::cout << std::setprecision(6);
+}
+
+const nt2::M9pSection* findSection(
+    const nt2::M9pRecord& record,
+    const std::string& tag
+) {
+    for (const auto& section : record.sections) {
+        if (section.tag == tag) return &section;
+    }
+    return nullptr;
 }
 
 } // namespace
@@ -57,14 +80,17 @@ int main(int argc, char** argv) {
     const auto summary = reader.inspect();
 
     std::cout << "NTDB file size : " << summary.fileSize << " bytes\n";
-    std::cout << "M9DB magic     : " << (summary.validMagic ? "yes" : "no") << '\n';
+    std::cout << "M9DB magic     : "
+              << (summary.validMagic ? "yes" : "no") << '\n';
     std::cout << "M9P records    : " << summary.m9pCount << '\n';
 
     if (summary.m9pCount != 0) {
         std::cout << "First M9P      : 0x"
-                  << std::hex << summary.firstM9pOffset << std::dec << '\n';
+                  << std::hex << summary.firstM9pOffset
+                  << std::dec << '\n';
         std::cout << "Last M9P       : 0x"
-                  << std::hex << summary.lastM9pOffset << std::dec << '\n';
+                  << std::hex << summary.lastM9pOffset
+                  << std::dec << '\n';
     }
 
     std::string warning;
@@ -72,11 +98,25 @@ int main(int argc, char** argv) {
 
     std::size_t structurallyValid = 0;
     std::size_t lengthValid = 0;
-    std::size_t version20250410 = 0;
+    std::size_t versionTagPresent = 0;
+    std::size_t versionValuePresent = 0;
     std::size_t headSize20 = 0;
     std::size_t flagsZero = 0;
+    std::size_t rresLayoutMatch = 0;
+    std::size_t rresSizeFieldMatch = 0;
+    std::size_t rresCountMatch = 0;
+    std::size_t rresFooterSecondZero = 0;
 
-    for (const auto& record : records) {
+    std::map<std::uint32_t, std::size_t> versionHistogram;
+    std::map<std::uint32_t, std::size_t> versionSizeHistogram;
+    std::map<std::uint32_t, std::size_t> field08Histogram;
+
+    std::vector<std::size_t> lengthMismatches;
+    std::vector<std::size_t> unusualVersions;
+
+    for (std::size_t i = 0; i < records.size(); ++i) {
+        const auto& record = records[i];
+
         if (record.sections.size() == 3
             && record.sections[0].tag == "head"
             && record.sections[1].tag == "harm"
@@ -84,24 +124,177 @@ int main(int argc, char** argv) {
             && record.hasHead) {
             ++structurallyValid;
         }
-        if (record.lengthMatches) ++lengthValid;
-        if (record.hasVersion && record.version.value == 20250410u) {
-            ++version20250410;
+
+        if (record.lengthMatches) {
+            ++lengthValid;
+        } else {
+            lengthMismatches.push_back(i);
         }
-        if (record.hasHead && record.head.declaredSize == 20) ++headSize20;
-        if (record.hasHead && record.head.flags == 0) ++flagsZero;
+
+        if (record.version.tagPresent) {
+            ++versionTagPresent;
+            ++versionSizeHistogram[record.version.declaredSize];
+        }
+
+        if (record.version.hasValue) {
+            ++versionValuePresent;
+            ++versionHistogram[record.version.value];
+            if (record.version.value != 20250410u) {
+                unusualVersions.push_back(i);
+            }
+        }
+
+        if (record.hasHead) {
+            if (record.head.declaredSize == 20) ++headSize20;
+            if (record.head.flags == 0) ++flagsZero;
+
+            std::uint32_t bits = 0;
+            static_assert(sizeof(bits) == sizeof(float), "unexpected uint32 size");
+            const float value = record.head.field08F32;
+            std::memcpy(&bits, &value, sizeof(bits));
+            ++field08Histogram[bits];
+        }
+
+        const auto* rres = findSection(record, "rres");
+        if (rres && record.hasHead) {
+            const std::size_t payload =
+                static_cast<std::size_t>(rres->payloadSize);
+            const std::size_t n =
+                static_cast<std::size_t>(record.head.sampleCount);
+
+            const bool layout =
+                payload == 16u + n * 2u + 8u;
+            if (layout) ++rresLayoutMatch;
+
+            if (payload >= 16) {
+                const auto base =
+                    static_cast<std::size_t>(rres->payloadOffset);
+                const std::uint32_t storedSize =
+                    readU32LE(reader.bytes(), base);
+
+                if (storedSize + 12u == payload) {
+                    ++rresSizeFieldMatch;
+                }
+
+                const std::uint32_t storedCountA =
+                    readU32LE(reader.bytes(), base + 8);
+                const std::uint32_t storedCountB =
+                    readU32LE(reader.bytes(), base + 12);
+
+                if (storedCountA == n && storedCountB == n) {
+                    ++rresCountMatch;
+                }
+
+                if (payload >= 8) {
+                    const std::uint32_t footerSecond =
+                        readU32LE(
+                            reader.bytes(),
+                            base + payload - 4
+                        );
+                    if (footerSecond == 0) {
+                        ++rresFooterSecondZero;
+                    }
+                }
+            }
+        }
     }
 
-    std::cout << "Structure valid   : "
+    std::cout << "Structure valid    : "
               << structurallyValid << "/" << records.size() << '\n';
-    std::cout << "Length field valid: "
+    std::cout << "Length field valid : "
               << lengthValid << "/" << records.size() << '\n';
-    std::cout << "ver=20250410      : "
-              << version20250410 << "/" << records.size() << '\n';
-    std::cout << "head declared=20  : "
+    std::cout << "version tag present: "
+              << versionTagPresent << "/" << records.size() << '\n';
+    std::cout << "version value      : "
+              << versionValuePresent << "/" << records.size() << '\n';
+    std::cout << "head declared=20   : "
               << headSize20 << "/" << records.size() << '\n';
-    std::cout << "head flags=0       : "
+    std::cout << "head flags=0        : "
               << flagsZero << "/" << records.size() << '\n';
+    std::cout << "rres 16+2N+8       : "
+              << rresLayoutMatch << "/" << records.size() << '\n';
+    std::cout << "rres sizeField+12  : "
+              << rresSizeFieldMatch << "/" << records.size() << '\n';
+    std::cout << "rres counts=N,N     : "
+              << rresCountMatch << "/" << records.size() << '\n';
+    std::cout << "rres footer u32[1]=0: "
+              << rresFooterSecondZero << "/" << records.size() << '\n';
+
+    std::cout << "\nVersion histogram:\n";
+    for (const auto& item : versionHistogram) {
+        std::cout << "  " << item.first
+                  << " (0x" << std::hex << item.first << std::dec
+                  << ") : " << item.second << '\n';
+    }
+
+    std::cout << "\nVersion payload-size histogram:\n";
+    for (const auto& item : versionSizeHistogram) {
+        std::cout << "  " << item.first << " : " << item.second << '\n';
+    }
+
+    std::cout << "\nfield+08 distinct values: "
+              << field08Histogram.size() << '\n';
+    std::size_t fieldPrint = 0;
+    for (const auto& item : field08Histogram) {
+        float value = 0.0f;
+        std::memcpy(&value, &item.first, sizeof(value));
+        std::cout << "  " << std::setprecision(10)
+                  << value << " : " << item.second
+                  << std::setprecision(6) << '\n';
+        if (++fieldPrint >= 16) break;
+    }
+
+    if (!lengthMismatches.empty()) {
+        std::cout << "\nLength mismatches (first 32):\n";
+        const std::size_t n = std::min<std::size_t>(
+            32, lengthMismatches.size());
+
+        for (std::size_t j = 0; j < n; ++j) {
+            const std::size_t i = lengthMismatches[j];
+            const auto& record = records[i];
+
+            std::cout << "  record[" << i << "]"
+                      << " offset=0x" << std::hex << record.offset
+                      << std::dec
+                      << " actual=" << (record.endOffset - record.offset)
+                      << " declared=" << record.declaredBodySize;
+
+            if (record.version.tagPresent) {
+                std::cout << " verSize=" << record.version.declaredSize;
+            }
+
+            if (record.version.hasValue) {
+                std::cout << " ver=" << record.version.value;
+            }
+
+            std::cout << '\n';
+
+            std::cout << "    prefix20: ";
+            printHex(
+                reader.bytes(),
+                static_cast<std::size_t>(record.offset),
+                20
+            );
+        }
+    }
+
+    if (!unusualVersions.empty()) {
+        std::cout << "\nNon-20250410 version records (first 32):\n";
+        const std::size_t n = std::min<std::size_t>(
+            32, unusualVersions.size());
+
+        for (std::size_t j = 0; j < n; ++j) {
+            const std::size_t i = unusualVersions[j];
+            const auto& record = records[i];
+
+            std::cout << "  record[" << i << "]"
+                      << " offset=0x" << std::hex << record.offset
+                      << std::dec
+                      << " ver=" << record.version.value
+                      << " (0x" << std::hex << record.version.value
+                      << std::dec << ")\n";
+        }
+    }
 
     const std::size_t count = records.size() < 8 ? records.size() : 8;
 
@@ -126,12 +319,18 @@ int main(int argc, char** argv) {
                   << (record.lengthMatches ? " [match]" : " [MISMATCH]")
                   << '\n';
 
-        if (record.hasVersion) {
-            std::cout << "  ver    : "
-                      << record.version.value
-                      << " (0x" << std::hex
-                      << record.version.value
-                      << std::dec << ")\n";
+        if (record.version.tagPresent) {
+            std::cout << "  ver    : ";
+            if (record.version.hasValue) {
+                std::cout << record.version.value
+                          << " (0x" << std::hex
+                          << record.version.value << std::dec << ")";
+            } else {
+                std::cout << "payload size "
+                          << record.version.declaredSize
+                          << " bytes";
+            }
+            std::cout << '\n';
         }
 
         for (const auto& section : record.sections) {
@@ -139,7 +338,8 @@ int main(int argc, char** argv) {
                       << " @ 0x" << std::hex << section.offset
                       << " payload=0x" << section.payloadOffset
                       << std::dec
-                      << " size=" << section.payloadSize << " bytes\n";
+                      << " size=" << section.payloadSize
+                      << " bytes\n";
 
             if (section.tag == "head" && record.hasHead) {
                 printHead(record.head);
@@ -179,6 +379,28 @@ int main(int argc, char** argv) {
                               << static_cast<long long>(payload)
                                  - static_cast<long long>(candidate)
                               << " bytes\n";
+
+                    if (payload >= 16) {
+                        const std::size_t base =
+                            static_cast<std::size_t>(section.payloadOffset);
+                        const std::uint32_t storedSize =
+                            readU32LE(reader.bytes(), base);
+
+                        std::cout << "    rres storedSize        : "
+                                  << storedSize << '\n';
+                        std::cout << "    storedSize + 12       : "
+                                  << (storedSize + 12u) << '\n';
+
+                        std::cout << "    residual byte start   : +0x10\n";
+                        std::cout << "    residual byte end     : +0x"
+                                  << std::hex
+                                  << (16u + n * 2u)
+                                  << std::dec << '\n';
+                        std::cout << "    footer start          : +0x"
+                                  << std::hex
+                                  << (16u + n * 2u)
+                                  << std::dec << '\n';
+                    }
                 }
             }
         }
