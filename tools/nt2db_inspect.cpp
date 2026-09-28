@@ -761,7 +761,6 @@ int main(int argc, char** argv) {
                                                 harmBase + secondBlockEnd + pos * 4u
                                             );
 
-                                        std::size_t candidatePosLimit = dataEnd;
                                         if (candidate > 0u
                                             && candidate <= 20000u
                                             && pos + 1u
