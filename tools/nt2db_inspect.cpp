@@ -170,6 +170,10 @@ int main(int argc, char** argv) {
     std::size_t harmPostSecondEmbeddedCountMatchesFirstCount = 0;
     std::size_t harmPostSecondNegativeRegionAllFiniteNegative = 0;
     std::size_t harmPostSecondExactRepeatedF0Block = 0;
+    std::size_t harmPostSecondLayoutRecoveredByEmbeddedScan = 0;
+    std::map<std::uint32_t, std::size_t> harmRecoveredEmbeddedOffsetHistogram;
+    std::map<std::uint32_t, std::size_t> harmRecoveredCountHistogram;
+    std::size_t harmRecoveredFinal3Positive = 0;
     std::size_t harmPostSecondNonExactRepeatedF0Block = 0;
     std::map<std::int64_t, std::size_t> harmPositiveLenMinusFirstCountAll;
     std::map<std::int64_t, std::size_t> harmEmbeddedCountMinusFirstCount;
@@ -631,6 +635,72 @@ int main(int argc, char** argv) {
                                 }
                                 if (negativeAllFiniteNegative) {
                                     ++harmPostSecondNegativeRegionAllFiniteNegative;
+                                }
+
+                                // The first positive word is not always the embedded count.
+                                // Search the positive region for a self-describing count:
+                                // u32 count == positiveLen - position - 4.
+                                bool recoveredEmbedded = false;
+                                std::size_t recoveredPos = dataEnd;
+                                std::uint32_t recoveredCount = 0u;
+                                for (std::size_t pos = 0u; pos + 4u <= dataEnd; ++pos) {
+                                    const std::uint32_t candidate =
+                                        readU32LE(
+                                            reader.bytes(),
+                                            harmBase + secondBlockEnd + pos * 4u
+                                        );
+                                    const std::size_t remainingAfterHeader =
+                                        dataEnd - pos;
+                                    if (remainingAfterHeader < 5u) continue;
+
+                                    const std::size_t expectedCount =
+                                        remainingAfterHeader - 4u;
+                                    if (candidate == expectedCount
+                                        && candidate > 0u) {
+                                        recoveredEmbedded = true;
+                                        recoveredPos = pos;
+                                        recoveredCount = candidate;
+                                        break;
+                                    }
+                                }
+
+                                if (recoveredEmbedded) {
+                                    ++harmPostSecondLayoutRecoveredByEmbeddedScan;
+                                    ++harmRecoveredEmbeddedOffsetHistogram[
+                                        static_cast<std::uint32_t>(recoveredPos)
+                                    ];
+                                    ++harmRecoveredCountHistogram[recoveredCount];
+
+                                    const std::size_t floatStart =
+                                        recoveredPos + 1u;
+                                    const std::size_t floatCount =
+                                        dataEnd > floatStart
+                                            ? dataEnd - floatStart
+                                            : 0u;
+
+                                    bool final3Positive = floatCount >= 3u;
+                                    if (final3Positive) {
+                                        for (std::size_t j = 0u; j < 3u; ++j) {
+                                            const std::size_t pos =
+                                                dataEnd - 3u + j;
+                                            const std::uint32_t word =
+                                                readU32LE(
+                                                    reader.bytes(),
+                                                    harmBase
+                                                        + secondBlockEnd
+                                                        + pos * 4u
+                                                );
+                                            float value = 0.0f;
+                                            std::memcpy(&value, &word, sizeof(value));
+                                            if (!std::isfinite(value) || value <= 0.0f) {
+                                                final3Positive = false;
+                                                break;
+                                            }
+                                        }
+                                    }
+                                    if (final3Positive) {
+                                        ++harmRecoveredFinal3Positive;
+                                    }
                                 }
 
                                 if (firstPositive < dataEnd) {
@@ -1139,6 +1209,18 @@ int main(int argc, char** argv) {
               << harmPositiveTail3AllFinitePositive << "/" << records.size() << '\n';
     std::cout << "  exact [neg floats][count][float[count]][3 floats][0] : "
               << harmPostSecondExactRepeatedF0Block << "/" << records.size() << '\n';
+    std::cout << "  embedded count recoverable by length equation : "
+              << harmPostSecondLayoutRecoveredByEmbeddedScan << "/" << records.size() << '\n';
+    std::cout << "  recovered final 3 floats all finite >0 : "
+              << harmRecoveredFinal3Positive << "/" << records.size() << '\n';
+    printTopHistogram(
+        "HARM recovered embedded-count offset in positive region",
+        harmRecoveredEmbeddedOffsetHistogram
+    );
+    printTopHistogram(
+        "HARM recovered embedded-count values",
+        harmRecoveredCountHistogram
+    );
     std::cout << "  non-exact parsed post-second block : "
               << harmPostSecondNonExactRepeatedF0Block << "/" << records.size() << '\n';
     std::cout << "  non-exact: trailing zero count != 1 : "
