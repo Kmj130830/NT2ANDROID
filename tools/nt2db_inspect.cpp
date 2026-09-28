@@ -4,6 +4,7 @@
 #include <algorithm>
 #include <cstdint>
 #include <cstring>
+#include <cmath>
 #include <iomanip>
 #include <iostream>
 #include <map>
@@ -142,6 +143,9 @@ int main(int argc, char** argv) {
     std::size_t harmDataDivisibleByHarm0Cx12 = 0;
     std::map<std::uint32_t, std::size_t> harmPerHarmonicHistogram;
     std::map<std::uint32_t, std::size_t> harmRemainderByHarm0C;
+    std::map<std::uint32_t, std::size_t> harmFirstWordHistogram;
+    std::map<std::uint32_t, std::size_t> harmSecondWordHistogram;
+    std::map<std::uint32_t, std::size_t> harmThirdWordHistogram;
     std::size_t harm0CFormulaMismatches = 0;
     double harmCutoffLowerBound = 0.0;
     double harmCutoffUpperBound = 0.0;
@@ -261,6 +265,19 @@ int main(int argc, char** argv) {
             ++harmField0CHistogram[harm0C];
 
             if (harm0C != 0 && harmPayload >= 16) {
+                if (harmPayload >= 28) {
+                    const std::uint32_t harm10 =
+                        readU32LE(reader.bytes(), harmBase + 16);
+                    const std::uint32_t harm14 =
+                        readU32LE(reader.bytes(), harmBase + 20);
+                    const std::uint32_t harm18 =
+                        readU32LE(reader.bytes(), harmBase + 24);
+
+                    ++harmFirstWordHistogram[harm10];
+                    ++harmSecondWordHistogram[harm14];
+                    ++harmThirdWordHistogram[harm18];
+                }
+
                 const std::size_t harmDataSize = harmPayload - 16u;
 
                 if (harmDataSize % harm0C == 0) {
@@ -695,6 +712,48 @@ int main(int argc, char** argv) {
               << harmDataDivisibleByHarm0Cx12 << "/" << records.size() << '\n';
     printTopHistogram("HARM (payload-16)/harm0C when exact", harmPerHarmonicHistogram);
     printTopHistogram("HARM (payload-16) remainder by harm0C", harmRemainderByHarm0C);
+    printTopHistogram("HARM +0x10 first u32", harmFirstWordHistogram);
+    printTopHistogram("HARM +0x14 second u32", harmSecondWordHistogram);
+    printTopHistogram("HARM +0x18 third u32", harmThirdWordHistogram);
+
+    const std::size_t diagnosticRecords[] = {0, 1, 2, 3, 4, 645, 656, 668, 675, 755, 756};
+    std::cout << "\nSelected HARM +0x10..+0x2F words:\n";
+    for (const std::size_t index : diagnosticRecords) {
+        if (index >= records.size()) continue;
+        const auto& record = records[index];
+        const auto* harm = findSection(record, "harm");
+        if (!harm || harm->payloadSize < 16) continue;
+
+        const std::size_t base =
+            static_cast<std::size_t>(harm->payloadOffset);
+
+        std::cout << "  record[" << index << "] payload="
+                  << harm->payloadSize
+                  << " bytes :";
+
+        const std::size_t bytesToPrint =
+            std::min<std::size_t>(32, harm->payloadSize - 16u);
+        for (std::size_t offset = 0; offset < bytesToPrint; offset += 4) {
+            if (offset + 4 > bytesToPrint) break;
+            const std::uint32_t word =
+                readU32LE(reader.bytes(), base + 16u + offset);
+            std::cout << " " << word;
+        }
+        std::cout << '\n';
+
+        if (harm->payloadSize >= 28) {
+            for (std::size_t offset = 16; offset <= 24; offset += 4) {
+                float value = 0.0f;
+                const std::uint32_t word =
+                    readU32LE(reader.bytes(), base + offset);
+                std::memcpy(&value, &word, sizeof(value));
+                std::cout << "    +0x" << std::hex << offset << std::dec
+                          << " u32=" << word
+                          << " float=" << std::setprecision(9) << value
+                          << std::setprecision(6) << '\n';
+            }
+        }
+    }
 
     std::cout << "\nRRES +0x08 == HARM +0x08 breakdown:\n";
     std::cout << "  when RRES +0x08 == +0x0C : "
