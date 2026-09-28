@@ -153,6 +153,10 @@ int main(int argc, char** argv) {
     std::size_t harmSecondCountMatchesHarm0C = 0;
     std::size_t harmSecondCountMatchesHarm0CPlusOrMinus1 = 0;
     std::map<std::uint32_t, std::size_t> harmSecondCountHistogram;
+    std::map<std::uint32_t, std::map<std::uint32_t, std::size_t>> harmSecondCountByHarm0C;
+    std::map<std::uint32_t, std::map<std::uint32_t, std::size_t>> harmSecondCountByHarm04;
+    std::size_t harmSecondCountVsHarm0CWithin5 = 0;
+    std::size_t harmSecondCountVsHarm0CWithin10 = 0;
     std::size_t harmPostSecondAllFiniteFloats = 0;
     std::size_t harmPostSecondCandidateHeaderMatches = 0;
     std::size_t harm10CeilSampleOver16 = 0;
@@ -490,6 +494,19 @@ int main(int argc, char** argv) {
                         const std::uint32_t secondCount =
                             readU32LE(reader.bytes(), harmBase + secondHeader);
                         ++harmSecondCountHistogram[secondCount];
+                        ++harmSecondCountByHarm0C[harm0C][secondCount];
+                        ++harmSecondCountByHarm04[harm04][secondCount];
+
+                        const std::uint32_t secondDelta =
+                            secondCount >= harm0C
+                                ? secondCount - harm0C
+                                : harm0C - secondCount;
+                        if (secondDelta <= 5u) {
+                            ++harmSecondCountVsHarm0CWithin5;
+                        }
+                        if (secondDelta <= 10u) {
+                            ++harmSecondCountVsHarm0CWithin10;
+                        }
 
                         if (secondCount == harm0C) {
                             ++harmSecondCountMatchesHarm0C;
@@ -914,6 +931,25 @@ int main(int argc, char** argv) {
               << "/" << records.size() << '\n';
 
     printTopHistogram("HARM second block count values", harmSecondCountHistogram);
+    std::cout << "  second count within +/-5 of HARM +0x0C : "
+              << harmSecondCountVsHarm0CWithin5
+              << "/" << records.size() << '\n';
+    std::cout << "  second count within +/-10 of HARM +0x0C: "
+              << harmSecondCountVsHarm0CWithin10
+              << "/" << records.size() << '\n';
+
+    std::cout << "  second-count distributions by common harmonic counts:\n";
+    for (const std::uint32_t harmonicCount : {30u, 40u, 48u, 61u, 81u}) {
+        const auto it = harmSecondCountByHarm0C.find(harmonicCount);
+        if (it == harmSecondCountByHarm0C.end()) continue;
+        std::cout << "    harm0C=" << harmonicCount << ":";
+        std::size_t printed = 0;
+        for (const auto& entry : it->second) {
+            std::cout << " " << entry.first << "=" << entry.second;
+            if (++printed >= 16) break;
+        }
+        std::cout << '\n';
+    }
 
     std::cout << "\nHARM post-second-block float-region diagnostics:\n";
     std::cout << "  Representative second-block followers are inspected below.\n";
@@ -1021,6 +1057,31 @@ int main(int argc, char** argv) {
                 if (index == 0u || index == 1u || index == 2u
                     || index == 3u || index == 4u
                     || index == 755u || index == 756u) {
+                    if (remaining >= 4u) {
+                        std::cout << "    post-second first/last floats:";
+                        const std::size_t show = std::min<std::size_t>(8u, remaining / 4u);
+                        for (std::size_t j = 0; j < show; ++j) {
+                            const std::uint32_t word =
+                                readU32LE(reader.bytes(), base + secondBlockEnd + j * 4u);
+                            float value = 0.0f;
+                            std::memcpy(&value, &word, sizeof(value));
+                            std::cout << " " << std::setprecision(7) << value;
+                        }
+                        std::cout << " ...";
+                        for (std::size_t j = show; j > 0u; --j) {
+                            const std::size_t indexFromEnd = (remaining / 4u) - j;
+                            const std::uint32_t word =
+                                readU32LE(
+                                    reader.bytes(),
+                                    base + secondBlockEnd + indexFromEnd * 4u
+                                );
+                            float value = 0.0f;
+                            std::memcpy(&value, &word, sizeof(value));
+                            std::cout << " " << std::setprecision(7) << value;
+                        }
+                        std::cout << '\n';
+                    }
+                }
                     std::cout << "    post-second candidates (first 12):";
                     std::size_t printed = 0u;
                     for (std::size_t off = secondBlockEnd;
