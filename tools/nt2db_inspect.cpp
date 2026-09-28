@@ -191,6 +191,11 @@ int main(int argc, char** argv) {
     std::vector<std::size_t> harmMissingBoundaryExamples;
     std::map<std::int64_t, std::size_t> harmRecoveredCountMinusFirstCount;
     std::map<std::uint32_t, std::size_t> harmRecoveredOffsetFromPositiveStart;
+    std::size_t harmRecoveredAtFirstPositive = 0;
+    std::size_t harmRecoveredAfterFirstPositive = 0;
+    std::map<std::uint32_t, std::size_t> harmRecoveredPrefixLength;
+    std::map<std::uint32_t, std::size_t> harmRecoveredPrefixPositiveCount;
+    std::map<std::uint32_t, std::size_t> harmRecoveredTrailingZerosByOffsetClass;
     std::size_t harmPostSecondNonExactRepeatedF0Block = 0;
     std::map<std::int64_t, std::size_t> harmPositiveLenMinusFirstCountAll;
     std::map<std::int64_t, std::size_t> harmEmbeddedCountMinusFirstCount;
@@ -686,6 +691,32 @@ int main(int argc, char** argv) {
                                     ++harmPostSecondLayoutRecoveredByEmbeddedScan;
                                     ++harmRecoveredOffsetFromPositiveStart[
                                         static_cast<std::uint32_t>(recoveredPos)
+                                    ];
+                                    if (recoveredPos == firstPositive) {
+                                        ++harmRecoveredAtFirstPositive;
+                                    } else {
+                                        ++harmRecoveredAfterFirstPositive;
+                                    }
+                                    ++harmRecoveredPrefixLength[
+                                        static_cast<std::uint32_t>(recoveredPos)
+                                    ];
+                                    std::size_t prefixPositiveCount = 0u;
+                                    for (std::size_t p = 0u; p < recoveredPos; ++p) {
+                                        const std::uint32_t prefixWord =
+                                            readU32LE(
+                                                reader.bytes(),
+                                                harmBase
+                                                    + secondBlockEnd
+                                                    + p * 4u
+                                            );
+                                        float prefixValue = 0.0f;
+                                        std::memcpy(&prefixValue, &prefixWord, sizeof(prefixValue));
+                                        if (std::isfinite(prefixValue) && prefixValue > 0.0f) {
+                                            ++prefixPositiveCount;
+                                        }
+                                    }
+                                    ++harmRecoveredPrefixPositiveCount[
+                                        static_cast<std::uint32_t>(prefixPositiveCount)
                                     ];
                                     const std::int64_t recoveredDelta =
                                         static_cast<std::int64_t>(recoveredCount)
@@ -1397,6 +1428,18 @@ int main(int argc, char** argv) {
         "HARM recovered count offset from positive start",
         harmRecoveredOffsetFromPositiveStart
     );
+    printTopHistogram(
+        "HARM recovered prefix length before count",
+        harmRecoveredPrefixLength
+    );
+    printTopHistogram(
+        "HARM recovered positive-float count before count",
+        harmRecoveredPrefixPositiveCount
+    );
+    std::cout << "  recovered count starts at first positive : "
+              << harmRecoveredAtFirstPositive << "/" << records.size() << '\n';
+    std::cout << "  recovered count starts after first positive : "
+              << harmRecoveredAfterFirstPositive << "/" << records.size() << '\n';
     std::cout << "  recovered count == firstCount : "
               << harmRecoveredCountEqualsFirstCount << "/" << records.size() << '\n';
     std::cout << "  recovered count != firstCount : "
