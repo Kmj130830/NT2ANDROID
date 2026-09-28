@@ -149,6 +149,12 @@ int main(int argc, char** argv) {
     std::size_t harm10CeilSampleOver16 = 0;
     std::size_t harm10FloorSampleOver16 = 0;
     std::size_t harm10CeilRres08Over16 = 0;
+    std::size_t harm10CeilHarm08Over16 = 0;
+    std::size_t harm10FloorHarm08Over16 = 0;
+    std::size_t harm10EqualsZero = 0;
+    std::size_t harm10Positive = 0;
+    std::map<std::uint32_t, std::pair<std::size_t, std::size_t>> harm10VsHarm08Quartiles;
+    std::map<std::uint32_t, std::size_t> harm10Harm08DeltaHistogram;
     std::size_t harm10EqualsSamplePlusOffset = 0;
     std::size_t harm0CFormulaMismatches = 0;
     double harmCutoffLowerBound = 0.0;
@@ -299,6 +305,38 @@ int main(int argc, char** argv) {
                         if (harm10 == ceilRres16) {
                             ++harm10CeilRres08Over16;
                         }
+                    }
+
+                    const std::uint32_t ceilHarm08 =
+                        (harm08 + 15u) / 16u;
+                    const std::uint32_t floorHarm08 =
+                        harm08 / 16u;
+                    if (harm10 == ceilHarm08) {
+                        ++harm10CeilHarm08Over16;
+                    }
+                    if (harm10 == floorHarm08) {
+                        ++harm10FloorHarm08Over16;
+                    }
+
+                    if (harm10 == 0) {
+                        ++harm10EqualsZero;
+                    } else {
+                        ++harm10Positive;
+                    }
+
+                    const std::uint32_t harm08Delta =
+                        harm08 >= harm10 * 16u
+                            ? harm08 - harm10 * 16u
+                            : harm10 * 16u - harm08;
+                    ++harm10Harm08DeltaHistogram[harm08Delta];
+
+                    const std::uint32_t quartile =
+                        harm08 / 4096u;
+                    auto& quartilePair = harm10VsHarm08Quartiles[quartile];
+                    if (harm10 == ceilHarm08) {
+                        ++quartilePair.first;
+                    } else {
+                        ++quartilePair.second;
                     }
 
                     ++harmFirstWordHistogram[harm10];
@@ -751,6 +789,21 @@ int main(int argc, char** argv) {
               << harm10FloorSampleOver16 << "/" << records.size() << '\n';
     std::cout << "  +0x10 == ceil(RRES+0x08/16)    : "
               << harm10CeilRres08Over16 << "/" << records.size() << '\n';
+    std::cout << "  +0x10 == ceil(HARM+0x08/16)       : "
+              << harm10CeilHarm08Over16 << "/" << records.size() << '\n';
+    std::cout << "  +0x10 == floor(HARM+0x08/16)      : "
+              << harm10FloorHarm08Over16 << "/" << records.size() << '\n';
+    std::cout << "  +0x10 == 0                        : "
+              << harm10EqualsZero << "/" << records.size() << '\n';
+    std::cout << "  +0x10 > 0                         : "
+              << harm10Positive << "/" << records.size() << '\n';
+    printTopHistogram("HARM +0x08 - (+0x10*16) absolute delta", harm10Harm08DeltaHistogram);
+    std::cout << "\n+0x10 vs HARM +0x08 by 4096-wide buckets:\n";
+    for (const auto& item : harm10VsHarm08Quartiles) {
+        std::cout << "  harm08Bucket=" << item.first
+                  << " : ceilMatch=" << item.second.first
+                  << " nonMatch=" << item.second.second << '\n';
+    }
 
     const std::size_t diagnosticRecords[] = {0, 1, 2, 3, 4, 645, 656, 668, 675, 755, 756};
     std::cout << "\nSelected HARM +0x10..+0x2F words:\n";
