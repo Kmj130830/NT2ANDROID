@@ -1059,62 +1059,81 @@ int main(int argc, char** argv) {
                     || index == 755u || index == 756u) {
                     if (remaining >= 4u) {
                         std::cout << "    post-second first/last floats:";
-                        const std::size_t show = std::min<std::size_t>(8u, remaining / 4u);
-                        for (std::size_t j = 0; j < show; ++j) {
-                            const std::uint32_t word =
-                                readU32LE(reader.bytes(), base + secondBlockEnd + j * 4u);
-                            float value = 0.0f;
-                            std::memcpy(&value, &word, sizeof(value));
-                            std::cout << " " << std::setprecision(7) << value;
-                        }
-                        std::cout << " ...";
-                        for (std::size_t j = show; j > 0u; --j) {
-                            const std::size_t indexFromEnd = (remaining / 4u) - j;
+                        const std::size_t show =
+                            std::min<std::size_t>(8u, remaining / 4u);
+
+                        for (std::size_t j = 0u; j < show; ++j) {
                             const std::uint32_t word =
                                 readU32LE(
                                     reader.bytes(),
-                                    base + secondBlockEnd + indexFromEnd * 4u
+                                    base + secondBlockEnd + j * 4u
                                 );
                             float value = 0.0f;
                             std::memcpy(&value, &word, sizeof(value));
                             std::cout << " " << std::setprecision(7) << value;
                         }
+
+                        std::cout << " ...";
+
+                        const std::size_t wordCount = remaining / 4u;
+                        const std::size_t tailStart =
+                            wordCount > show ? wordCount - show : 0u;
+
+                        for (std::size_t j = tailStart; j < wordCount; ++j) {
+                            const std::uint32_t word =
+                                readU32LE(
+                                    reader.bytes(),
+                                    base + secondBlockEnd + j * 4u
+                                );
+                            float value = 0.0f;
+                            std::memcpy(&value, &word, sizeof(value));
+                            std::cout << " " << std::setprecision(7) << value;
+                        }
+
                         std::cout << '\n';
                     }
                 }
-                    std::cout << "    post-second candidates (first 12):";
-                    std::size_t printed = 0u;
-                    for (std::size_t off = secondBlockEnd;
-                         off + 16u <= harm->payloadSize && printed < 12u;
-                         off += 4u) {
-                        const std::uint32_t word =
-                            readU32LE(reader.bytes(), base + off);
-                        if (word > 4096u) continue;
 
-                        bool threeFinite = true;
-                        float vals[3] = {};
-                        for (std::size_t j = 0u; j < 3u; ++j) {
-                            const std::uint32_t next =
-                                readU32LE(reader.bytes(), base + off + 4u + j * 4u);
-                            std::memcpy(&vals[j], &next, sizeof(vals[j]));
-                            if (!std::isfinite(vals[j])
-                                || std::abs(vals[j]) >= 100.0f) {
-                                threeFinite = false;
-                                break;
-                            }
+                std::cout << "    post-second candidates (first 12):";
+                std::size_t printed = 0u;
+
+                for (std::size_t off = secondBlockEnd;
+                     off + 16u <= harm->payloadSize && printed < 12u;
+                     off += 4u) {
+                    const std::uint32_t word =
+                        readU32LE(reader.bytes(), base + off);
+
+                    if (word > 4096u) continue;
+
+                    bool threeFinite = true;
+                    float vals[3] = {};
+
+                    for (std::size_t j = 0u; j < 3u; ++j) {
+                        const std::uint32_t next =
+                            readU32LE(
+                                reader.bytes(),
+                                base + off + 4u + j * 4u
+                            );
+                        std::memcpy(&vals[j], &next, sizeof(vals[j]));
+
+                        if (!std::isfinite(vals[j])
+                            || std::abs(vals[j]) >= 100.0f) {
+                            threeFinite = false;
+                            break;
                         }
-
-                        if (!threeFinite) continue;
-
-                        std::cout << " [+" << std::hex << off << std::dec
-                                  << " word=" << word
-                                  << " next=" << std::setprecision(5)
-                                  << vals[0] << "," << vals[1] << "," << vals[2]
-                                  << "]";
-                        ++printed;
                     }
-                    std::cout << '\n';
+
+                    if (!threeFinite) continue;
+
+                    std::cout << " [+" << std::hex << off << std::dec
+                              << " word=" << word
+                              << " next=" << std::setprecision(5)
+                              << vals[0] << "," << vals[1] << "," << vals[2]
+                              << "]";
+                    ++printed;
                 }
+
+                std::cout << '\n';
 
                 harmPostSecondAllFiniteFloats +=
                     finiteFloatWords == (remaining / 4u);
