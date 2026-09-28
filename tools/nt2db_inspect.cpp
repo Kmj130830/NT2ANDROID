@@ -153,6 +153,8 @@ int main(int argc, char** argv) {
     std::size_t harmSecondCountMatchesHarm0C = 0;
     std::size_t harmSecondCountMatchesHarm0CPlusOrMinus1 = 0;
     std::map<std::uint32_t, std::size_t> harmSecondCountHistogram;
+    std::size_t harmPostSecondAllFiniteFloats = 0;
+    std::size_t harmPostSecondCandidateHeaderMatches = 0;
     std::size_t harm10CeilSampleOver16 = 0;
     std::size_t harm10FloorSampleOver16 = 0;
     std::size_t harm10CeilRres08Over16 = 0;
@@ -895,6 +897,11 @@ int main(int argc, char** argv) {
                   << " nonMatch=" << item.second.second << '\n';
     }
 
+    std::cout << "  post-second regions inspected: "
+              << harmPostSecondAllFiniteFloats << "/" << records.size() << "\n";
+    std::cout << "  post-second candidate small-int+3-float occurrences: "
+              << harmPostSecondCandidateHeaderMatches << "\n";
+
     std::cout << "\nHARM first-block / second-block diagnostics:\n";
     std::cout << "  first count == ceil(sampleCount/16) : "
               << harmFirstCountMatchesCeilSampleOver16
@@ -907,6 +914,10 @@ int main(int argc, char** argv) {
               << "/" << records.size() << '\n';
 
     printTopHistogram("HARM second block count values", harmSecondCountHistogram);
+
+    std::cout << "\nHARM post-second-block float-region diagnostics:\n";
+    std::cout << "  Representative second-block followers are inspected below.\n";
+    std::cout << "  Candidate headers require a small integer (<=4096) followed by 3 finite floats.\n";
 
     std::cout << "\nHARM repeated [count][float[count]][3 floats] chain check:\n";
     std::cout << "  first block structurally valid : "
@@ -942,6 +953,113 @@ int main(int argc, char** argv) {
         std::cout << '\n';
 
         if (harm->payloadSize >= 28) {
+            std::size_t secondBlockEnd = 0u;
+            {
+                const std::uint32_t firstCount =
+                    readU32LE(reader.bytes(), base + 16u);
+                const std::size_t firstEnd =
+                    16u + 4u + static_cast<std::size_t>(firstCount) * 4u + 12u;
+                if (firstEnd + 4u <= harm->payloadSize) {
+                    const std::uint32_t secondCount =
+                        readU32LE(reader.bytes(), base + firstEnd);
+                    const std::size_t secondEnd =
+                        firstEnd + 4u
+                        + static_cast<std::size_t>(secondCount) * 4u
+                        + 12u;
+                    if (secondEnd <= harm->payloadSize) {
+                        secondBlockEnd = secondEnd;
+                    }
+                }
+            }
+
+            if (secondBlockEnd != 0u) {
+                const std::size_t remaining =
+                    harm->payloadSize - secondBlockEnd;
+                std::size_t finiteFloatWords = 0u;
+                std::size_t candidateHeaders = 0u;
+
+                for (std::size_t off = secondBlockEnd;
+                     off + 16u <= harm->payloadSize;
+                     off += 4u) {
+                    const std::uint32_t word =
+                        readU32LE(reader.bytes(), base + off);
+
+                    float f0 = 0.0f;
+                    std::memcpy(&f0, &word, sizeof(f0));
+
+                    if (std::isfinite(f0)
+                        && std::abs(f0) < 1.0e6f) {
+                        ++finiteFloatWords;
+                    }
+
+                    if (word <= 4096u && off + 16u <= harm->payloadSize) {
+                        bool threeFinite = true;
+                        for (std::size_t j = 1u; j <= 3u; ++j) {
+                            const std::uint32_t next =
+                                readU32LE(reader.bytes(), base + off + j * 4u);
+                            float fv = 0.0f;
+                            std::memcpy(&fv, &next, sizeof(fv));
+                            if (!std::isfinite(fv)
+                                || std::abs(fv) >= 100.0f) {
+                                threeFinite = false;
+                                break;
+                            }
+                        }
+                        if (threeFinite) {
+                            ++candidateHeaders;
+                        }
+                    }
+                }
+
+                std::cout << "    after second block: +" << std::hex
+                          << secondBlockEnd << std::dec
+                          << " bytesRemaining=" << remaining
+                          << " floatLikeWords=" << finiteFloatWords
+                          << " candidateSmallInt+3floats="
+                          << candidateHeaders << '\n';
+
+                if (index == 0u || index == 1u || index == 2u
+                    || index == 3u || index == 4u
+                    || index == 755u || index == 756u) {
+                    std::cout << "    post-second candidates (first 12):";
+                    std::size_t printed = 0u;
+                    for (std::size_t off = secondBlockEnd;
+                         off + 16u <= harm->payloadSize && printed < 12u;
+                         off += 4u) {
+                        const std::uint32_t word =
+                            readU32LE(reader.bytes(), base + off);
+                        if (word > 4096u) continue;
+
+                        bool threeFinite = true;
+                        float vals[3] = {};
+                        for (std::size_t j = 0u; j < 3u; ++j) {
+                            const std::uint32_t next =
+                                readU32LE(reader.bytes(), base + off + 4u + j * 4u);
+                            std::memcpy(&vals[j], &next, sizeof(vals[j]));
+                            if (!std::isfinite(vals[j])
+                                || std::abs(vals[j]) >= 100.0f) {
+                                threeFinite = false;
+                                break;
+                            }
+                        }
+
+                        if (!threeFinite) continue;
+
+                        std::cout << " [+" << std::hex << off << std::dec
+                                  << " word=" << word
+                                  << " next=" << std::setprecision(5)
+                                  << vals[0] << "," << vals[1] << "," << vals[2]
+                                  << "]";
+                        ++printed;
+                    }
+                    std::cout << '\n';
+                }
+
+                harmPostSecondAllFiniteFloats +=
+                    finiteFloatWords == (remaining / 4u);
+                harmPostSecondCandidateHeaderMatches += candidateHeaders;
+            }
+
             std::cout << "    count/float-tail chain (first 12 blocks):";
             std::size_t chainCursor = 16u;
             std::size_t chainBlocks = 0;
