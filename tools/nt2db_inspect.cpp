@@ -1091,6 +1091,76 @@ int main(int argc, char** argv) {
                         }
 
                         std::cout << '\n';
+
+                        const std::size_t wordCount = remaining / 4u;
+                        std::cout << "    post-second sampled floats:";
+                        const std::size_t samplePositions[] = {
+                            0u, 1u, 2u, 3u, 4u, 8u, 16u, 32u,
+                            64u, 128u, 256u, 512u, 1024u, 2048u,
+                            wordCount > 8u ? wordCount - 8u : 0u,
+                            wordCount > 4u ? wordCount - 4u : 0u,
+                            wordCount > 1u ? wordCount - 1u : 0u
+                        };
+                        std::size_t previous = static_cast<std::size_t>(-1);
+                        for (const std::size_t pos : samplePositions) {
+                            if (pos >= wordCount || pos == previous) continue;
+                            previous = pos;
+                            const std::uint32_t word =
+                                readU32LE(
+                                    reader.bytes(),
+                                    base + secondBlockEnd + pos * 4u
+                                );
+                            float value = 0.0f;
+                            std::memcpy(&value, &word, sizeof(value));
+                            std::cout << " [" << pos << "="
+                                      << std::setprecision(8) << value << "]";
+                        }
+                        std::cout << '\n';
+
+                        std::size_t firstPositive = wordCount;
+                        std::size_t lastNegative = 0u;
+                        std::size_t zeroCountAtEnd = 0u;
+                        while (zeroCountAtEnd < wordCount) {
+                            const std::size_t pos =
+                                wordCount - 1u - zeroCountAtEnd;
+                            const std::uint32_t word =
+                                readU32LE(
+                                    reader.bytes(),
+                                    base + secondBlockEnd + pos * 4u
+                                );
+                            float value = 0.0f;
+                            std::memcpy(&value, &word, sizeof(value));
+                            if (value == 0.0f) {
+                                ++zeroCountAtEnd;
+                            } else {
+                                break;
+                            }
+                        }
+
+                        for (std::size_t pos = 0u; pos < wordCount; ++pos) {
+                            const std::uint32_t word =
+                                readU32LE(
+                                    reader.bytes(),
+                                    base + secondBlockEnd + pos * 4u
+                                );
+                            float value = 0.0f;
+                            std::memcpy(&value, &word, sizeof(value));
+                            if (value > 0.0f && firstPositive == wordCount) {
+                                firstPositive = pos;
+                            }
+                            if (value < 0.0f) {
+                                lastNegative = pos;
+                            }
+                        }
+
+                        std::cout << "    post-second sign/zero boundary:"
+                                  << " firstPositive="
+                                  << (firstPositive == wordCount
+                                      ? -1ll
+                                      : static_cast<long long>(firstPositive))
+                                  << " lastNegative=" << lastNegative
+                                  << " trailingZeroFloats=" << zeroCountAtEnd
+                                  << '\n';
                     }
                 }
 
