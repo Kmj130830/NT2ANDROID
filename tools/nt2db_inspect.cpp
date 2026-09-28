@@ -260,6 +260,31 @@ int main(int argc, char** argv) {
             ++harmField08Histogram[harm08];
             ++harmField0CHistogram[harm0C];
 
+            if (harm0C != 0 && harmPayload >= 16) {
+                const std::size_t harmDataSize = harmPayload - 16u;
+
+                if (harmDataSize % harm0C == 0) {
+                    ++harmDataDivisibleByHarm0C;
+                    ++harmPerHarmonicHistogram[
+                        static_cast<std::uint32_t>(harmDataSize / harm0C)
+                    ];
+                } else {
+                    ++harmRemainderByHarm0C[
+                        static_cast<std::uint32_t>(harmDataSize % harm0C)
+                    ];
+                }
+
+                if (harmDataSize % (static_cast<std::size_t>(harm0C) * 4u) == 0) {
+                    ++harmDataDivisibleByHarm0Cx4;
+                }
+                if (harmDataSize % (static_cast<std::size_t>(harm0C) * 8u) == 0) {
+                    ++harmDataDivisibleByHarm0Cx8;
+                }
+                if (harmDataSize % (static_cast<std::size_t>(harm0C) * 12u) == 0) {
+                    ++harmDataDivisibleByHarm0Cx12;
+                }
+            }
+
             if (record.hasHead && record.head.referenceFrequency > 0.0) {
                 auto& stats = harm0CFrequencyStats[harm0C];
                 const double frequency = record.head.referenceFrequency;
