@@ -146,6 +146,9 @@ int main(int argc, char** argv) {
     std::map<std::uint32_t, std::size_t> harmFirstWordHistogram;
     std::map<std::uint32_t, std::size_t> harmSecondWordHistogram;
     std::map<std::uint32_t, std::size_t> harmThirdWordHistogram;
+    std::size_t harmChainFirstPlusThreeValid = 0;
+    std::size_t harmChainAtLeastTwoBlocks = 0;
+    std::size_t harmChainCompleteToFooter = 0;
     std::size_t harm10CeilSampleOver16 = 0;
     std::size_t harm10FloorSampleOver16 = 0;
     std::size_t harm10CeilRres08Over16 = 0;
@@ -411,6 +414,51 @@ int main(int argc, char** argv) {
                     }
                 } else {
                     ++harm0CFormulaMismatches;
+                }
+            }
+
+            if (harmPayload >= 20) {
+                std::size_t cursor = 16u;
+                std::size_t blocks = 0;
+                bool firstPlusThreeValid = false;
+                bool complete = false;
+
+                while (cursor + 4u <= harmPayload && blocks < 64u) {
+                    const std::uint32_t count =
+                        readU32LE(reader.bytes(), harmBase + cursor);
+                    const std::size_t dataBytes =
+                        static_cast<std::size_t>(count) * 4u;
+
+                    if (dataBytes > harmPayload - cursor - 4u) {
+                        break;
+                    }
+
+                    const std::size_t afterData = cursor + 4u + dataBytes;
+                    if (afterData + 12u > harmPayload) {
+                        break;
+                    }
+
+                    cursor = afterData + 12u;
+                    ++blocks;
+
+                    if (blocks == 1u) {
+                        firstPlusThreeValid = true;
+                    }
+
+                    if (cursor == harmPayload) {
+                        complete = true;
+                        break;
+                    }
+                }
+
+                if (firstPlusThreeValid) {
+                    ++harmChainFirstPlusThreeValid;
+                }
+                if (blocks >= 2u) {
+                    ++harmChainAtLeastTwoBlocks;
+                }
+                if (complete) {
+                    ++harmChainCompleteToFooter;
                 }
             }
         }
@@ -805,6 +853,14 @@ int main(int argc, char** argv) {
                   << " nonMatch=" << item.second.second << '\n';
     }
 
+    std::cout << "\nHARM repeated [count][float[count]][3 floats] chain check:\n";
+    std::cout << "  first block structurally valid : "
+              << harmChainFirstPlusThreeValid << "/" << records.size() << '\n';
+    std::cout << "  at least 2 blocks             : "
+              << harmChainAtLeastTwoBlocks << "/" << records.size() << '\n';
+    std::cout << "  chain reaches payload end     : "
+              << harmChainCompleteToFooter << "/" << records.size() << '\n';
+
     const std::size_t diagnosticRecords[] = {0, 1, 2, 3, 4, 645, 656, 668, 675, 755, 756};
     std::cout << "\nSelected HARM +0x10..+0x2F words:\n";
     for (const std::size_t index : diagnosticRecords) {
@@ -831,6 +887,53 @@ int main(int argc, char** argv) {
         std::cout << '\n';
 
         if (harm->payloadSize >= 28) {
+            std::cout << "    count/float-tail chain (first 12 blocks):";
+            std::size_t chainCursor = 16u;
+            std::size_t chainBlocks = 0;
+
+            while (chainCursor + 4u <= harm->payloadSize
+                   && chainBlocks < 12u) {
+                const std::uint32_t count =
+                    readU32LE(reader.bytes(), base + chainCursor);
+                const std::size_t dataBytes =
+                    static_cast<std::size_t>(count) * 4u;
+
+                if (dataBytes > harm->payloadSize - chainCursor - 4u
+                    || chainCursor + 4u + dataBytes + 12u > harm->payloadSize) {
+                    std::cout << " [stop@" << std::hex << chainCursor
+                              << std::dec << " count=" << count << "]";
+                    break;
+                }
+
+                const std::size_t dataStart = chainCursor + 4u;
+                const std::size_t tailStart = dataStart + dataBytes;
+
+                std::cout << " [#" << chainBlocks
+                          << " @+0x" << std::hex << chainCursor << std::dec
+                          << " count=" << count
+                          << " tail=";
+
+                for (std::size_t t = 0; t < 3; ++t) {
+                    float value = 0.0f;
+                    const std::uint32_t word =
+                        readU32LE(reader.bytes(), base + tailStart + t * 4u);
+                    std::memcpy(&value, &word, sizeof(value));
+                    if (t != 0) std::cout << ",";
+                    std::cout << std::setprecision(6) << value;
+                }
+
+                std::cout << "]";
+
+                chainCursor = tailStart + 12u;
+                ++chainBlocks;
+
+                if (chainCursor == harm->payloadSize) {
+                    break;
+                }
+            }
+
+            std::cout << '\n';
+
             for (std::size_t offset = 16; offset <= 24; offset += 4) {
                 float value = 0.0f;
                 const std::uint32_t word =
