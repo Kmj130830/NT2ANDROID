@@ -170,6 +170,15 @@ int main(int argc, char** argv) {
     std::size_t harmPostSecondEmbeddedCountMatchesFirstCount = 0;
     std::size_t harmPostSecondNegativeRegionAllFiniteNegative = 0;
     std::size_t harmPostSecondExactRepeatedF0Block = 0;
+    std::size_t harmPostSecondNonExactRepeatedF0Block = 0;
+    std::map<std::int64_t, std::size_t> harmPositiveLenMinusFirstCountAll;
+    std::map<std::int64_t, std::size_t> harmEmbeddedCountMinusFirstCount;
+    std::map<std::uint32_t, std::size_t> harmTrailingZeroCountHistogram;
+    std::map<std::uint32_t, std::size_t> harm0CExactBlockCount;
+    std::map<std::uint32_t, std::size_t> harm0CNonExactBlockCount;
+    std::size_t harmMismatchNoTrailingOneZero = 0;
+    std::size_t harmMismatchEmbeddedCount = 0;
+    std::size_t harmMismatchPositiveLength = 0;
     std::map<std::int64_t, std::size_t> harmPositiveLenMinusFirstCount;
     std::map<std::uint32_t, std::size_t> harmNegativeLenHistogram;
     std::size_t harmPostSecondCandidateHeaderMatches = 0;
@@ -582,6 +591,15 @@ int main(int argc, char** argv) {
                                 const std::size_t positiveLen =
                                     dataEnd >= negativeLen ? dataEnd - negativeLen : 0u;
 
+                                ++harmPositiveLenMinusFirstCountAll[
+                                    static_cast<std::int64_t>(positiveLen)
+                                    - static_cast<std::int64_t>(firstCount)
+                                ];
+
+                                ++harmTrailingZeroCountHistogram[
+                                    static_cast<std::uint32_t>(trailingZeros)
+                                ];
+
                                 ++harmPositiveLenMinusFirstCount[
                                     static_cast<std::int64_t>(positiveLen)
                                     - static_cast<std::int64_t>(firstCount)
@@ -667,12 +685,35 @@ int main(int argc, char** argv) {
                                         ++harmPositiveTail3AllFinitePositive;
                                     }
 
-                                    if (trailingZeros == 1u
+                                    const bool exactRepeatedF0Block =
+                                        trailingZeros == 1u
                                         && embeddedCount == firstCount
+                                        && positiveLen == static_cast<std::size_t>(firstCount) + 4u
                                         && floatCount == static_cast<std::size_t>(firstCount) + 3u
                                         && allFinitePositive
-                                        && tail3FinitePositive) {
+                                        && tail3FinitePositive;
+
+                                    if (exactRepeatedF0Block) {
                                         ++harmPostSecondExactRepeatedF0Block;
+                                        ++harm0CExactBlockCount[harm0C];
+                                    } else {
+                                        ++harmPostSecondNonExactRepeatedF0Block;
+                                        ++harm0CNonExactBlockCount[harm0C];
+                                    }
+
+                                    ++harmEmbeddedCountMinusFirstCount[
+                                        static_cast<std::int64_t>(embeddedCount)
+                                        - static_cast<std::int64_t>(firstCount)
+                                    ];
+
+                                    if (trailingZeros != 1u) {
+                                        ++harmMismatchNoTrailingOneZero;
+                                    }
+                                    if (embeddedCount != firstCount) {
+                                        ++harmMismatchEmbeddedCount;
+                                    }
+                                    if (positiveLen != static_cast<std::size_t>(firstCount) + 4u) {
+                                        ++harmMismatchPositiveLength;
                                     }
                                 }
                             }
@@ -1098,9 +1139,39 @@ int main(int argc, char** argv) {
               << harmPositiveTail3AllFinitePositive << "/" << records.size() << '\n';
     std::cout << "  exact [neg floats][count][float[count]][3 floats][0] : "
               << harmPostSecondExactRepeatedF0Block << "/" << records.size() << '\n';
+    std::cout << "  non-exact parsed post-second block : "
+              << harmPostSecondNonExactRepeatedF0Block << "/" << records.size() << '\n';
+    std::cout << "  non-exact: trailing zero count != 1 : "
+              << harmMismatchNoTrailingOneZero << "/" << records.size() << '\n';
+    std::cout << "  non-exact: embedded count != firstCount : "
+              << harmMismatchEmbeddedCount << "/" << records.size() << '\n';
+    std::cout << "  non-exact: positiveLen != firstCount+4 : "
+              << harmMismatchPositiveLength << "/" << records.size() << '\n';
+
+    std::cout << "  exact block counts by HARM+0x0C:\n";
+    for (const auto& item : harm0CExactBlockCount) {
+        std::cout << "    harm0C=" << item.first
+                  << " exact=" << item.second
+                  << " nonExact=";
+        const auto it = harm0CNonExactBlockCount.find(item.first);
+        std::cout << (it == harm0CNonExactBlockCount.end() ? 0u : it->second)
+                  << '\n';
+    }
     printTopHistogram(
-        "HARM positiveLen-firstCount",
+        "HARM positiveLen-firstCount (boundary subset)",
         harmPositiveLenMinusFirstCount
+    );
+    printTopHistogram(
+        "HARM positiveLen-firstCount (all parsed)",
+        harmPositiveLenMinusFirstCountAll
+    );
+    printTopHistogram(
+        "HARM embeddedCount-firstCount (all parsed)",
+        harmEmbeddedCountMinusFirstCount
+    );
+    printTopHistogram(
+        "HARM trailing-zero count (all parsed)",
+        harmTrailingZeroCountHistogram
     );
     printTopHistogram(
         "HARM negative-region length values",
