@@ -174,6 +174,12 @@ int main(int argc, char** argv) {
     std::map<std::uint32_t, std::size_t> harmRecoveredEmbeddedOffsetHistogram;
     std::map<std::uint32_t, std::size_t> harmRecoveredCountHistogram;
     std::size_t harmRecoveredFinal3Positive = 0;
+    std::size_t harmPositiveDataHasSignBoundary = 0;
+    std::size_t harmPositiveDataMissingSignBoundary = 0;
+    std::size_t harmRecoveredCountEqualsFirstCount = 0;
+    std::size_t harmRecoveredCountDiffersFirstCount = 0;
+    std::map<std::int64_t, std::size_t> harmRecoveredCountMinusFirstCount;
+    std::map<std::uint32_t, std::size_t> harmRecoveredOffsetFromPositiveStart;
     std::size_t harmPostSecondNonExactRepeatedF0Block = 0;
     std::map<std::int64_t, std::size_t> harmPositiveLenMinusFirstCountAll;
     std::map<std::int64_t, std::size_t> harmEmbeddedCountMinusFirstCount;
@@ -665,7 +671,20 @@ int main(int argc, char** argv) {
                                 }
 
                                 if (recoveredEmbedded) {
+                                    ++harmPositiveDataHasSignBoundary;
                                     ++harmPostSecondLayoutRecoveredByEmbeddedScan;
+                                    ++harmRecoveredOffsetFromPositiveStart[
+                                        static_cast<std::uint32_t>(recoveredPos)
+                                    ];
+                                    const std::int64_t recoveredDelta =
+                                        static_cast<std::int64_t>(recoveredCount)
+                                        - static_cast<std::int64_t>(firstCount);
+                                    ++harmRecoveredCountMinusFirstCount[recoveredDelta];
+                                    if (recoveredCount == firstCount) {
+                                        ++harmRecoveredCountEqualsFirstCount;
+                                    } else {
+                                        ++harmRecoveredCountDiffersFirstCount;
+                                    }
                                     ++harmRecoveredEmbeddedOffsetHistogram[
                                         static_cast<std::uint32_t>(recoveredPos)
                                     ];
@@ -701,6 +720,10 @@ int main(int argc, char** argv) {
                                     if (final3Positive) {
                                         ++harmRecoveredFinal3Positive;
                                     }
+                                }
+
+                                if (!recoveredEmbedded) {
+                                    ++harmPositiveDataMissingSignBoundary;
                                 }
 
                                 if (firstPositive < dataEnd) {
@@ -1221,6 +1244,22 @@ int main(int argc, char** argv) {
         "HARM recovered embedded-count values",
         harmRecoveredCountHistogram
     );
+    printTopHistogram(
+        "HARM recovered count-firstCount delta",
+        harmRecoveredCountMinusFirstCount
+    );
+    printTopHistogram(
+        "HARM recovered count offset from positive start",
+        harmRecoveredOffsetFromPositiveStart
+    );
+    std::cout << "  recovered count == firstCount : "
+              << harmRecoveredCountEqualsFirstCount << "/" << records.size() << '\n';
+    std::cout << "  recovered count != firstCount : "
+              << harmRecoveredCountDiffersFirstCount << "/" << records.size() << '\n';
+    std::cout << "  positive sign-boundary found : "
+              << harmPositiveDataHasSignBoundary << "/" << records.size() << '\n';
+    std::cout << "  positive sign-boundary missing : "
+              << harmPositiveDataMissingSignBoundary << "/" << records.size() << '\n';
     std::cout << "  non-exact parsed post-second block : "
               << harmPostSecondNonExactRepeatedF0Block << "/" << records.size() << '\n';
     std::cout << "  non-exact: trailing zero count != 1 : "
