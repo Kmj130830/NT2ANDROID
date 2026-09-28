@@ -178,6 +178,13 @@ int main(int argc, char** argv) {
     std::size_t harmPositiveDataMissingSignBoundary = 0;
     std::size_t harmRecoveredCountEqualsFirstCount = 0;
     std::size_t harmRecoveredCountDiffersFirstCount = 0;
+    std::size_t harmMissingBoundaryHarm10Zero = 0;
+    std::size_t harmMissingBoundaryHasPositiveFloat = 0;
+    std::size_t harmMissingBoundaryAllNonPositive = 0;
+    std::size_t harmMissingBoundaryLastNonZeroNegative = 0;
+    std::map<std::uint32_t, std::size_t> harmMissingBoundaryTrailingZeros;
+    std::map<std::uint32_t, std::size_t> harmMissingBoundaryHarm10;
+    std::map<std::uint32_t, std::size_t> harmMissingBoundarySecondCount;
     std::map<std::int64_t, std::size_t> harmRecoveredCountMinusFirstCount;
     std::map<std::uint32_t, std::size_t> harmRecoveredOffsetFromPositiveStart;
     std::size_t harmPostSecondNonExactRepeatedF0Block = 0;
@@ -724,6 +731,48 @@ int main(int argc, char** argv) {
 
                                 if (!recoveredEmbedded) {
                                     ++harmPositiveDataMissingSignBoundary;
+
+                                    ++harmMissingBoundaryHarm10[
+                                        readU32LE(reader.bytes(), harmBase + 16u)
+                                    ];
+                                    ++harmMissingBoundarySecondCount[secondCount];
+                                    ++harmMissingBoundaryTrailingZeros[
+                                        static_cast<std::uint32_t>(trailingZeros)
+                                    ];
+
+                                    const std::uint32_t missingHarm10 =
+                                        readU32LE(reader.bytes(), harmBase + 16u);
+                                    if (missingHarm10 == 0u) {
+                                        ++harmMissingBoundaryHarm10Zero;
+                                    }
+
+                                    bool hasPositive = false;
+                                    std::int32_t lastNonZeroSign = 0;
+                                    for (std::size_t pos = 0u; pos < dataEnd; ++pos) {
+                                        const std::uint32_t word =
+                                            readU32LE(
+                                                reader.bytes(),
+                                                harmBase + secondBlockEnd + pos * 4u
+                                            );
+                                        float value = 0.0f;
+                                        std::memcpy(&value, &word, sizeof(value));
+
+                                        if (value > 0.0f) {
+                                            hasPositive = true;
+                                        }
+                                        if (value != 0.0f && std::isfinite(value)) {
+                                            lastNonZeroSign = value < 0.0f ? -1 : 1;
+                                        }
+                                    }
+
+                                    if (hasPositive) {
+                                        ++harmMissingBoundaryHasPositiveFloat;
+                                    } else {
+                                        ++harmMissingBoundaryAllNonPositive;
+                                    }
+                                    if (lastNonZeroSign < 0) {
+                                        ++harmMissingBoundaryLastNonZeroNegative;
+                                    }
                                 }
 
                                 if (firstPositive < dataEnd) {
@@ -1260,6 +1309,26 @@ int main(int argc, char** argv) {
               << harmPositiveDataHasSignBoundary << "/" << records.size() << '\n';
     std::cout << "  positive sign-boundary missing : "
               << harmPositiveDataMissingSignBoundary << "/" << records.size() << '\n';
+    std::cout << "  missing boundary with HARM+0x10 == 0 : "
+              << harmMissingBoundaryHarm10Zero << "/" << records.size() << '\n';
+    std::cout << "  missing boundary with any positive float : "
+              << harmMissingBoundaryHasPositiveFloat << "/" << records.size() << '\n';
+    std::cout << "  missing boundary all non-positive : "
+              << harmMissingBoundaryAllNonPositive << "/" << records.size() << '\n';
+    std::cout << "  missing boundary last nonzero < 0 : "
+              << harmMissingBoundaryLastNonZeroNegative << "/" << records.size() << '\n';
+    printTopHistogram(
+        "HARM missing-boundary trailing-zero count",
+        harmMissingBoundaryTrailingZeros
+    );
+    printTopHistogram(
+        "HARM missing-boundary HARM+0x10",
+        harmMissingBoundaryHarm10
+    );
+    printTopHistogram(
+        "HARM missing-boundary second count",
+        harmMissingBoundarySecondCount
+    );
     std::cout << "  non-exact parsed post-second block : "
               << harmPostSecondNonExactRepeatedF0Block << "/" << records.size() << '\n';
     std::cout << "  non-exact: trailing zero count != 1 : "
