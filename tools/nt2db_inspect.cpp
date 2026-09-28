@@ -1092,7 +1092,6 @@ int main(int argc, char** argv) {
 
                         std::cout << '\n';
 
-                        const std::size_t wordCount = remaining / 4u;
                         std::cout << "    post-second sampled floats:";
                         const std::size_t samplePositions[] = {
                             0u, 1u, 2u, 3u, 4u, 8u, 16u, 32u,
