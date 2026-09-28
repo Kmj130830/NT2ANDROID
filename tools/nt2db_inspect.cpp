@@ -136,6 +136,12 @@ int main(int argc, char** argv) {
     std::map<std::uint32_t, Harm0CStats> harm0CFrequencyStats;
     std::map<std::uint32_t, std::pair<std::size_t, std::size_t>> relationByHarm0C;
     std::size_t harm0CMatchesFloor16000 = 0;
+    std::size_t harmDataDivisibleByHarm0C = 0;
+    std::size_t harmDataDivisibleByHarm0Cx4 = 0;
+    std::size_t harmDataDivisibleByHarm0Cx8 = 0;
+    std::size_t harmDataDivisibleByHarm0Cx12 = 0;
+    std::map<std::uint32_t, std::size_t> harmPerHarmonicHistogram;
+    std::map<std::uint32_t, std::size_t> harmRemainderByHarm0C;
     std::size_t harm0CFormulaMismatches = 0;
     double harmCutoffLowerBound = 0.0;
     double harmCutoffUpperBound = 0.0;
@@ -642,18 +648,30 @@ int main(int argc, char** argv) {
     }
 
     std::cout << "\nHARM +0x0C == floor(16000 / referenceFrequency): "
-              << harm0CMatchesFloor16000 << "/" << records.size() << '\\n';
+              << harm0CMatchesFloor16000 << "/" << records.size() << '\n';
     std::cout << "HARM cutoff bounds implied by all matching records: ";
     if (harmCutoffBoundsInitialized) {
         std::cout << harmCutoffLowerBound
-                  << " <= cutoff < " << harmCutoffUpperBound << '\\n';
+                  << " <= cutoff < " << harmCutoffUpperBound << '\n';
     } else {
-        std::cout << "not available\\n";
+        std::cout << "not available\n";
     }
     std::cout << "HARM formula mismatches: "
-              << harm0CFormulaMismatches << "/" << records.size() << '\\n';
+              << harm0CFormulaMismatches << "/" << records.size() << '\n';
 
-    std::cout << "\\nRRES +0x08 == HARM +0x08 breakdown:\\n";
+    std::cout << "\nHARM payload decomposition by +0x0C:\n";
+    std::cout << "  payload-16 divisible by harm0C    : "
+              << harmDataDivisibleByHarm0C << "/" << records.size() << '\n';
+    std::cout << "  divisible by harm0C*4             : "
+              << harmDataDivisibleByHarm0Cx4 << "/" << records.size() << '\n';
+    std::cout << "  divisible by harm0C*8             : "
+              << harmDataDivisibleByHarm0Cx8 << "/" << records.size() << '\n';
+    std::cout << "  divisible by harm0C*12            : "
+              << harmDataDivisibleByHarm0Cx12 << "/" << records.size() << '\n';
+    printTopHistogram("HARM (payload-16)/harm0C when exact", harmPerHarmonicHistogram);
+    printTopHistogram("HARM (payload-16) remainder by harm0C", harmRemainderByHarm0C);
+
+    std::cout << "\nRRES +0x08 == HARM +0x08 breakdown:\n";
     std::cout << "  when RRES +0x08 == +0x0C : "
               << harm08EqRres08WhenCountsEqual << '\n';
     std::cout << "  when RRES +0x08 != +0x0C : "
