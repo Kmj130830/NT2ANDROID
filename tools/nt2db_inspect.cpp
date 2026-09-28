@@ -146,6 +146,10 @@ int main(int argc, char** argv) {
     std::map<std::uint32_t, std::size_t> harmFirstWordHistogram;
     std::map<std::uint32_t, std::size_t> harmSecondWordHistogram;
     std::map<std::uint32_t, std::size_t> harmThirdWordHistogram;
+    std::size_t harm10CeilSampleOver16 = 0;
+    std::size_t harm10FloorSampleOver16 = 0;
+    std::size_t harm10CeilRres08Over16 = 0;
+    std::size_t harm10EqualsSamplePlusOffset = 0;
     std::size_t harm0CFormulaMismatches = 0;
     double harmCutoffLowerBound = 0.0;
     double harmCutoffUpperBound = 0.0;
@@ -272,6 +276,30 @@ int main(int argc, char** argv) {
                         readU32LE(reader.bytes(), harmBase + 20);
                     const std::uint32_t harm18 =
                         readU32LE(reader.bytes(), harmBase + 24);
+
+                    if (record.hasHead) {
+                        const std::uint32_t sampleCount =
+                            record.head.sampleCount;
+                        const std::uint32_t ceil16 =
+                            (sampleCount + 15u) / 16u;
+                        const std::uint32_t floor16 =
+                            sampleCount / 16u;
+                        if (harm10 == ceil16) ++harm10CeilSampleOver16;
+                        if (harm10 == floor16) ++harm10FloorSampleOver16;
+                    }
+
+                    if (rres && rres->payloadSize >= 12) {
+                        const std::uint32_t rres08 =
+                            readU32LE(
+                                reader.bytes(),
+                                static_cast<std::size_t>(rres->payloadOffset) + 8u
+                            );
+                        const std::uint32_t ceilRres16 =
+                            (rres08 + 15u) / 16u;
+                        if (harm10 == ceilRres16) {
+                            ++harm10CeilRres08Over16;
+                        }
+                    }
 
                     ++harmFirstWordHistogram[harm10];
                     ++harmSecondWordHistogram[harm14];
@@ -716,6 +744,14 @@ int main(int argc, char** argv) {
     printTopHistogram("HARM +0x14 second u32", harmSecondWordHistogram);
     printTopHistogram("HARM +0x18 third u32", harmThirdWordHistogram);
 
+    std::cout << "\nHARM +0x10 candidate count checks:\n";
+    std::cout << "  +0x10 == ceil(sampleCount/16) : "
+              << harm10CeilSampleOver16 << "/" << records.size() << '\n';
+    std::cout << "  +0x10 == floor(sampleCount/16) : "
+              << harm10FloorSampleOver16 << "/" << records.size() << '\n';
+    std::cout << "  +0x10 == ceil(RRES+0x08/16)    : "
+              << harm10CeilRres08Over16 << "/" << records.size() << '\n';
+
     const std::size_t diagnosticRecords[] = {0, 1, 2, 3, 4, 645, 656, 668, 675, 755, 756};
     std::cout << "\nSelected HARM +0x10..+0x2F words:\n";
     for (const std::size_t index : diagnosticRecords) {
@@ -751,6 +787,39 @@ int main(int argc, char** argv) {
                           << " u32=" << word
                           << " float=" << std::setprecision(9) << value
                           << std::setprecision(6) << '\n';
+            }
+
+            const std::uint32_t harm10 =
+                readU32LE(reader.bytes(), base + 16u);
+            if (harm10 > 0) {
+                const std::size_t candidateEnd =
+                    20u + static_cast<std::size_t>(harm10) * 4u;
+                if (candidateEnd + 16u <= harm->payloadSize) {
+                    std::cout << "    candidate first-float-array end=+0x"
+                              << std::hex << candidateEnd << std::dec << '\n';
+                    std::cout << "    around candidate end: ";
+                    printHex(
+                        reader.bytes(),
+                        base + candidateEnd - 16u,
+                        32
+                    );
+
+                    for (std::size_t offset = candidateEnd;
+                         offset < candidateEnd + 16u;
+                         offset += 4) {
+                        if (offset + 4u > harm->payloadSize) break;
+                        float value = 0.0f;
+                        const std::uint32_t word =
+                            readU32LE(reader.bytes(), base + offset);
+                        std::memcpy(&value, &word, sizeof(value));
+                        std::cout << "    end+0x"
+                                  << std::hex << (offset - candidateEnd)
+                                  << std::dec
+                                  << " u32=" << word
+                                  << " float=" << std::setprecision(9)
+                                  << value << std::setprecision(6) << '\n';
+                    }
+                }
             }
         }
     }
