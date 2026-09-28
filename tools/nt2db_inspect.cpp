@@ -160,7 +160,16 @@ int main(int argc, char** argv) {
     std::size_t harmPostSecondAllFiniteFloats = 0;
     std::size_t harmPositiveLenMatchesFirstCountPlus1 = 0;
     std::size_t harmPositiveLenMatchesFirstCountPlus2 = 0;
+    std::size_t harmPositiveLenMatchesFirstCountPlus4 = 0;
     std::size_t harmPositiveLenMatchesCeilSamplePlus1 = 0;
+    std::size_t harmPositiveLenMatchesCeilSamplePlus4 = 0;
+    std::size_t harmPositiveRegionCountMatchesFirstCount = 0;
+    std::size_t harmPositiveRegionAllFinitePositive = 0;
+    std::size_t harmPositiveTail3AllFinitePositive = 0;
+    std::size_t harmPostSecondTrailingExactlyOneZero = 0;
+    std::size_t harmPostSecondEmbeddedCountMatchesFirstCount = 0;
+    std::size_t harmPostSecondNegativeRegionAllFiniteNegative = 0;
+    std::size_t harmPostSecondExactRepeatedF0Block = 0;
     std::map<std::int64_t, std::size_t> harmPositiveLenMinusFirstCount;
     std::map<std::uint32_t, std::size_t> harmNegativeLenHistogram;
     std::size_t harmPostSecondCandidateHeaderMatches = 0;
@@ -523,6 +532,150 @@ int main(int argc, char** argv) {
                                 : harm0C - secondCount;
                         if (delta <= 1u) {
                             ++harmSecondCountMatchesHarm0CPlusOrMinus1;
+                        }
+
+                        const std::size_t secondBlockEnd =
+                            secondHeader
+                            + 4u
+                            + static_cast<std::size_t>(secondCount) * 4u
+                            + 12u;
+
+                        if (secondBlockEnd <= harmPayload
+                            && record.hasHead) {
+                            const std::size_t remaining =
+                                harmPayload - secondBlockEnd;
+                            if (remaining % 4u == 0u && remaining > 0u) {
+                                const std::size_t wordCount = remaining / 4u;
+                                ++harmPostSecondAllFiniteFloats;
+
+                                std::size_t trailingZeros = 0u;
+                                while (trailingZeros < wordCount) {
+                                    const std::size_t pos =
+                                        wordCount - 1u - trailingZeros;
+                                    const std::uint32_t word =
+                                        readU32LE(reader.bytes(), harmBase + secondBlockEnd + pos * 4u);
+                                    if (word == 0u) {
+                                        ++trailingZeros;
+                                    } else {
+                                        break;
+                                    }
+                                }
+                                if (trailingZeros == 1u) {
+                                    ++harmPostSecondTrailingExactlyOneZero;
+                                }
+
+                                const std::size_t dataEnd = wordCount - trailingZeros;
+                                std::size_t firstPositive = dataEnd;
+                                for (std::size_t pos = 0u; pos < dataEnd; ++pos) {
+                                    const std::uint32_t word =
+                                        readU32LE(reader.bytes(), harmBase + secondBlockEnd + pos * 4u);
+                                    float value = 0.0f;
+                                    std::memcpy(&value, &word, sizeof(value));
+                                    if (value > 0.0f) {
+                                        firstPositive = pos;
+                                        break;
+                                    }
+                                }
+
+                                const std::size_t negativeLen =
+                                    firstPositive == dataEnd ? dataEnd : firstPositive;
+                                const std::size_t positiveLen =
+                                    dataEnd >= negativeLen ? dataEnd - negativeLen : 0u;
+
+                                ++harmPositiveLenMinusFirstCount[
+                                    static_cast<std::int64_t>(positiveLen)
+                                    - static_cast<std::int64_t>(firstCount)
+                                ];
+                                ++harmNegativeLenHistogram[
+                                    static_cast<std::uint32_t>(negativeLen)
+                                ];
+
+                                if (positiveLen == static_cast<std::size_t>(firstCount) + 4u) {
+                                    ++harmPositiveLenMatchesFirstCountPlus4;
+                                }
+
+                                const std::size_t ceilSample =
+                                    (static_cast<std::size_t>(record.head.sampleCount) + 15u) / 16u;
+                                if (positiveLen == ceilSample + 4u) {
+                                    ++harmPositiveLenMatchesCeilSamplePlus4;
+                                }
+
+                                bool negativeAllFiniteNegative = true;
+                                for (std::size_t pos = 0u; pos < negativeLen; ++pos) {
+                                    const std::uint32_t word =
+                                        readU32LE(reader.bytes(), harmBase + secondBlockEnd + pos * 4u);
+                                    float value = 0.0f;
+                                    std::memcpy(&value, &word, sizeof(value));
+                                    if (!std::isfinite(value) || value >= 0.0f) {
+                                        negativeAllFiniteNegative = false;
+                                        break;
+                                    }
+                                }
+                                if (negativeAllFiniteNegative) {
+                                    ++harmPostSecondNegativeRegionAllFiniteNegative;
+                                }
+
+                                if (firstPositive < dataEnd) {
+                                    const std::uint32_t embeddedCount =
+                                        readU32LE(reader.bytes(), harmBase + secondBlockEnd + firstPositive * 4u);
+
+                                    if (embeddedCount == firstCount) {
+                                        ++harmPostSecondEmbeddedCountMatchesFirstCount;
+                                    }
+
+                                    const std::size_t floatStart = firstPositive + 1u;
+                                    const std::size_t floatCount =
+                                        dataEnd > floatStart ? dataEnd - floatStart : 0u;
+
+                                    if (positiveLen == static_cast<std::size_t>(embeddedCount) + 4u) {
+                                        ++harmPositiveRegionCountMatchesFirstCount;
+                                    }
+
+                                    bool allFinitePositive = true;
+                                    for (std::size_t j = 0u; j < floatCount; ++j) {
+                                        const std::size_t pos = floatStart + j;
+                                        const std::uint32_t word =
+                                            readU32LE(reader.bytes(), harmBase + secondBlockEnd + pos * 4u);
+                                        float value = 0.0f;
+                                        std::memcpy(&value, &word, sizeof(value));
+                                        if (!std::isfinite(value) || value <= 0.0f) {
+                                            allFinitePositive = false;
+                                            break;
+                                        }
+                                    }
+
+                                    if (floatCount == static_cast<std::size_t>(firstCount) + 3u
+                                        && allFinitePositive) {
+                                        ++harmPositiveRegionAllFinitePositive;
+                                    }
+
+                                    bool tail3FinitePositive = floatCount >= 3u;
+                                    if (tail3FinitePositive) {
+                                        for (std::size_t j = 0u; j < 3u; ++j) {
+                                            const std::size_t pos = dataEnd - 3u + j;
+                                            const std::uint32_t word =
+                                                readU32LE(reader.bytes(), harmBase + secondBlockEnd + pos * 4u);
+                                            float value = 0.0f;
+                                            std::memcpy(&value, &word, sizeof(value));
+                                            if (!std::isfinite(value) || value <= 0.0f) {
+                                                tail3FinitePositive = false;
+                                                break;
+                                            }
+                                        }
+                                    }
+                                    if (tail3FinitePositive) {
+                                        ++harmPositiveTail3AllFinitePositive;
+                                    }
+
+                                    if (trailingZeros == 1u
+                                        && embeddedCount == firstCount
+                                        && floatCount == static_cast<std::size_t>(firstCount) + 3u
+                                        && allFinitePositive
+                                        && tail3FinitePositive) {
+                                        ++harmPostSecondExactRepeatedF0Block;
+                                    }
+                                }
+                            }
                         }
                     }
                 }
@@ -925,8 +1078,26 @@ int main(int argc, char** argv) {
               << harmPositiveLenMatchesFirstCountPlus1 << "/" << records.size() << '\n';
     std::cout << "  positiveLen == firstCount+2 : "
               << harmPositiveLenMatchesFirstCountPlus2 << "/" << records.size() << '\n';
+    std::cout << "  positiveLen == firstCount+4 : "
+              << harmPositiveLenMatchesFirstCountPlus4 << "/" << records.size() << '\n';
     std::cout << "  positiveLen == ceil(sampleCount/16)+1 : "
               << harmPositiveLenMatchesCeilSamplePlus1 << "/" << records.size() << '\n';
+    std::cout << "  positiveLen == ceil(sampleCount/16)+4 : "
+              << harmPositiveLenMatchesCeilSamplePlus4 << "/" << records.size() << '\n';
+    std::cout << "  post-second trailing zero count == 1 : "
+              << harmPostSecondTrailingExactlyOneZero << "/" << records.size() << '\n';
+    std::cout << "  embedded count == firstCount : "
+              << harmPostSecondEmbeddedCountMatchesFirstCount << "/" << records.size() << '\n';
+    std::cout << "  positiveLen == embeddedCount+4 : "
+              << harmPositiveRegionCountMatchesFirstCount << "/" << records.size() << '\n';
+    std::cout << "  negative region all finite < 0 : "
+              << harmPostSecondNegativeRegionAllFiniteNegative << "/" << records.size() << '\n';
+    std::cout << "  positive float region count==firstCount+3 and all >0 : "
+              << harmPositiveRegionAllFinitePositive << "/" << records.size() << '\n';
+    std::cout << "  final 3 positive floats all finite >0 : "
+              << harmPositiveTail3AllFinitePositive << "/" << records.size() << '\n';
+    std::cout << "  exact [neg floats][count][float[count]][3 floats][0] : "
+              << harmPostSecondExactRepeatedF0Block << "/" << records.size() << '\n';
     printTopHistogram(
         "HARM positiveLen-firstCount",
         harmPositiveLenMinusFirstCount
