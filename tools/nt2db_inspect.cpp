@@ -185,6 +185,10 @@ int main(int argc, char** argv) {
     std::map<std::uint32_t, std::size_t> harmMissingBoundaryTrailingZeros;
     std::map<std::uint32_t, std::size_t> harmMissingBoundaryHarm10;
     std::map<std::uint32_t, std::size_t> harmMissingBoundarySecondCount;
+    std::size_t harmMissingBoundaryContainsFirstCountF0Block = 0;
+    std::size_t harmMissingBoundaryContainsAnyCountF0Block = 0;
+    std::size_t harmMissingBoundaryF0BlockFollowedByNegative = 0;
+    std::vector<std::size_t> harmMissingBoundaryExamples;
     std::map<std::int64_t, std::size_t> harmRecoveredCountMinusFirstCount;
     std::map<std::uint32_t, std::size_t> harmRecoveredOffsetFromPositiveStart;
     std::size_t harmPostSecondNonExactRepeatedF0Block = 0;
@@ -731,6 +735,99 @@ int main(int argc, char** argv) {
 
                                 if (!recoveredEmbedded) {
                                     ++harmPositiveDataMissingSignBoundary;
+
+                                    if (harmMissingBoundaryExamples.size() < 32u) {
+                                        harmMissingBoundaryExamples.push_back(
+                                            static_cast<std::size_t>(&record - &records[0])
+                                        );
+                                    }
+
+                                    const std::size_t firstCountPosLimit =
+                                        dataEnd >= static_cast<std::size_t>(firstCount) + 4u + 12u
+                                            ? dataEnd - (
+                                                static_cast<std::size_t>(firstCount) + 4u + 12u
+                                            )
+                                            : 0u;
+                                    bool firstCountBlockFound = false;
+                                    bool anyCountBlockFound = false;
+                                    bool foundFollowedByNegative = false;
+
+                                    for (std::size_t pos = 0u;
+                                         pos <= firstCountPosLimit;
+                                         ++pos) {
+                                        const std::uint32_t candidate =
+                                            readU32LE(
+                                                reader.bytes(),
+                                                harmBase + secondBlockEnd + pos * 4u
+                                            );
+
+                                        std::size_t candidatePosLimit = dataEnd;
+                                        if (candidate > 0u
+                                            && candidate <= 20000u
+                                            && pos + 1u
+                                                + static_cast<std::size_t>(candidate) + 3u
+                                                <= dataEnd) {
+                                            bool f0BlockPositive = true;
+                                            for (std::size_t j = 0u;
+                                                 j < static_cast<std::size_t>(candidate) + 3u;
+                                                 ++j) {
+                                                const std::uint32_t word =
+                                                    readU32LE(
+                                                        reader.bytes(),
+                                                        harmBase
+                                                            + secondBlockEnd
+                                                            + (pos + 1u + j) * 4u
+                                                    );
+                                                float value = 0.0f;
+                                                std::memcpy(&value, &word, sizeof(value));
+                                                if (!std::isfinite(value) || value <= 0.0f) {
+                                                    f0BlockPositive = false;
+                                                    break;
+                                                }
+                                            }
+
+                                            if (f0BlockPositive) {
+                                                anyCountBlockFound = true;
+                                                if (candidate == firstCount) {
+                                                    firstCountBlockFound = true;
+
+                                                    const std::size_t afterBlock =
+                                                        pos + 1u
+                                                        + static_cast<std::size_t>(candidate)
+                                                        + 3u;
+                                                    if (afterBlock < dataEnd) {
+                                                        const std::uint32_t nextWord =
+                                                            readU32LE(
+                                                                reader.bytes(),
+                                                                harmBase
+                                                                    + secondBlockEnd
+                                                                    + afterBlock * 4u
+                                                            );
+                                                        float nextValue = 0.0f;
+                                                        std::memcpy(
+                                                            &nextValue,
+                                                            &nextWord,
+                                                            sizeof(nextValue)
+                                                        );
+                                                        if (std::isfinite(nextValue)
+                                                            && nextValue < 0.0f) {
+                                                            foundFollowedByNegative = true;
+                                                        }
+                                                    }
+                                                }
+                                            }
+                                        }
+                                    }
+
+                                    if (firstCountBlockFound) {
+                                        ++harmMissingBoundaryContainsFirstCountF0Block;
+                                    }
+                                    if (anyCountBlockFound) {
+                                        ++harmMissingBoundaryContainsAnyCountF0Block;
+                                    }
+                                    if (foundFollowedByNegative) {
+                                        ++harmMissingBoundaryF0BlockFollowedByNegative;
+                                    }
 
                                     ++harmMissingBoundaryHarm10[
                                         readU32LE(reader.bytes(), harmBase + 16u)
@@ -1329,6 +1426,12 @@ int main(int argc, char** argv) {
         "HARM missing-boundary second count",
         harmMissingBoundarySecondCount
     );
+    std::cout << "  missing boundary contains [firstCount][positive floats] : "
+              << harmMissingBoundaryContainsFirstCountF0Block << "/" << records.size() << '\n';
+    std::cout << "  missing boundary contains any [count][positive floats] : "
+              << harmMissingBoundaryContainsAnyCountF0Block << "/" << records.size() << '\n';
+    std::cout << "  recovered F0 block followed by negative float : "
+              << harmMissingBoundaryF0BlockFollowedByNegative << "/" << records.size() << '\n';
     std::cout << "  non-exact parsed post-second block : "
               << harmPostSecondNonExactRepeatedF0Block << "/" << records.size() << '\n';
     std::cout << "  non-exact: trailing zero count != 1 : "
