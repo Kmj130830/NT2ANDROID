@@ -149,6 +149,10 @@ int main(int argc, char** argv) {
     std::size_t harmChainFirstPlusThreeValid = 0;
     std::size_t harmChainAtLeastTwoBlocks = 0;
     std::size_t harmChainCompleteToFooter = 0;
+    std::size_t harmFirstCountMatchesCeilSampleOver16 = 0;
+    std::size_t harmSecondCountMatchesHarm0C = 0;
+    std::size_t harmSecondCountMatchesHarm0CPlusOrMinus1 = 0;
+    std::map<std::uint32_t, std::size_t> harmSecondCountHistogram;
     std::size_t harm10CeilSampleOver16 = 0;
     std::size_t harm10FloorSampleOver16 = 0;
     std::size_t harm10CeilRres08Over16 = 0;
@@ -459,6 +463,44 @@ int main(int argc, char** argv) {
                 }
                 if (complete) {
                     ++harmChainCompleteToFooter;
+                }
+
+                if (blocks >= 1u && record.hasHead) {
+                    const std::uint32_t firstCount =
+                        readU32LE(reader.bytes(), harmBase + 16u);
+                    const std::uint32_t expected =
+                        (record.head.sampleCount + 15u) / 16u;
+                    if (firstCount == expected) {
+                        ++harmFirstCountMatchesCeilSampleOver16;
+                    }
+                }
+
+                if (blocks >= 2u) {
+                    const std::size_t firstCursor = 16u;
+                    const std::uint32_t firstCount =
+                        readU32LE(reader.bytes(), harmBase + firstCursor);
+                    const std::size_t secondHeader =
+                        firstCursor + 4u
+                        + static_cast<std::size_t>(firstCount) * 4u
+                        + 12u;
+
+                    if (secondHeader + 4u <= harmPayload) {
+                        const std::uint32_t secondCount =
+                            readU32LE(reader.bytes(), harmBase + secondHeader);
+                        ++harmSecondCountHistogram[secondCount];
+
+                        if (secondCount == harm0C) {
+                            ++harmSecondCountMatchesHarm0C;
+                        }
+
+                        const std::uint32_t delta =
+                            secondCount >= harm0C
+                                ? secondCount - harm0C
+                                : harm0C - secondCount;
+                        if (delta <= 1u) {
+                            ++harmSecondCountMatchesHarm0CPlusOrMinus1;
+                        }
+                    }
                 }
             }
         }
@@ -853,6 +895,19 @@ int main(int argc, char** argv) {
                   << " nonMatch=" << item.second.second << '\n';
     }
 
+    std::cout << "\nHARM first-block / second-block diagnostics:\n";
+    std::cout << "  first count == ceil(sampleCount/16) : "
+              << harmFirstCountMatchesCeilSampleOver16
+              << "/" << records.size() << '\n';
+    std::cout << "  second count == HARM +0x0C         : "
+              << harmSecondCountMatchesHarm0C
+              << "/" << records.size() << '\n';
+    std::cout << "  second count within +/-1 of HARM0C : "
+              << harmSecondCountMatchesHarm0CPlusOrMinus1
+              << "/" << records.size() << '\n';
+
+    printTopHistogram("HARM second block count values", harmSecondCountHistogram);
+
     std::cout << "\nHARM repeated [count][float[count]][3 floats] chain check:\n";
     std::cout << "  first block structurally valid : "
               << harmChainFirstPlusThreeValid << "/" << records.size() << '\n';
@@ -902,6 +957,24 @@ int main(int argc, char** argv) {
                     || chainCursor + 4u + dataBytes + 12u > harm->payloadSize) {
                     std::cout << " [stop@" << std::hex << chainCursor
                               << std::dec << " count=" << count << "]";
+                    if (chainCursor + 32u <= harm->payloadSize) {
+                        std::cout << " nextWords=";
+                        for (std::size_t j = 0; j < 8u; ++j) {
+                            const std::uint32_t word =
+                                readU32LE(
+                                    reader.bytes(),
+                                    base + chainCursor + j * 4u
+                                );
+                            float value = 0.0f;
+                            std::memcpy(&value, &word, sizeof(value));
+                            if (j != 0u) std::cout << ",";
+                            std::cout << word
+                                      << "/"
+                                      << std::setprecision(6)
+                                      << value
+                                      << std::setprecision(6);
+                        }
+                    }
                     break;
                 }
 
