@@ -203,6 +203,19 @@ int main(int argc, char** argv) {
     std::map<std::uint32_t, std::size_t> harmUniversalF0PrefixLength;
     std::map<std::uint32_t, std::size_t> harmUniversalF0PrefixPositiveCount;
     std::vector<std::size_t> harmMissingBoundaryExamples;
+    struct HarmF0EndExample {
+        std::size_t recordIndex = 0;
+        std::uint32_t firstCount = 0;
+        std::uint32_t secondCount = 0;
+        std::size_t dataWords = 0;
+        std::size_t firstPositive = 0;
+        std::size_t countPos = 0;
+        std::size_t blockEnd = 0;
+        std::size_t trailingZeros = 0;
+        std::size_t positiveBeforeCount = 0;
+        std::size_t nonFiniteBeforeCount = 0;
+    };
+    std::vector<HarmF0EndExample> harmF0EndExamples;
     std::map<std::int64_t, std::size_t> harmRecoveredCountMinusFirstCount;
     std::map<std::uint32_t, std::size_t> harmRecoveredOffsetFromPositiveStart;
     std::size_t harmRecoveredAtFirstPositive = 0;
@@ -1000,6 +1013,46 @@ int main(int argc, char** argv) {
 
                                     if (firstCountBlockFound) {
                                         ++harmMissingBoundaryContainsFirstCountF0Block;
+
+                                        if (harmF0EndExamples.size() < 32u) {
+                                            HarmF0EndExample example;
+                                            example.recordIndex =
+                                                static_cast<std::size_t>(&record - &records[0]);
+                                            example.firstCount = firstCount;
+                                            example.secondCount = secondCount;
+                                            example.dataWords = dataEnd;
+                                            example.firstPositive = firstPositive;
+                                            example.countPos = bestFirstCountBlockPos;
+                                            example.blockEnd = bestFirstCountBlockAfter;
+                                            example.trailingZeros = trailingZeros;
+
+                                            for (std::size_t p = 0u;
+                                                 p < bestFirstCountBlockPos;
+                                                 ++p) {
+                                                const std::uint32_t prefixWord =
+                                                    readU32LE(
+                                                        reader.bytes(),
+                                                        harmBase
+                                                            + secondBlockEnd
+                                                            + p * 4u
+                                                    );
+                                                float prefixValue = 0.0f;
+                                                std::memcpy(
+                                                    &prefixValue,
+                                                    &prefixWord,
+                                                    sizeof(prefixValue)
+                                                );
+                                                if (std::isfinite(prefixValue)
+                                                    && prefixValue > 0.0f) {
+                                                    ++example.positiveBeforeCount;
+                                                }
+                                                if (!std::isfinite(prefixValue)) {
+                                                    ++example.nonFiniteBeforeCount;
+                                                }
+                                            }
+
+                                            harmF0EndExamples.push_back(example);
+                                        }
                                     }
                                     if (anyCountBlockFound) {
                                         ++harmMissingBoundaryContainsAnyCountF0Block;
@@ -1730,6 +1783,22 @@ int main(int argc, char** argv) {
         "HARM missing-boundary F0 suffix length",
         harmMissingBoundaryF0BlockSuffixLength
     );
+    if (!harmF0EndExamples.empty()) {
+        std::cout << "\nHARM missing-boundary F0 block end examples (first 32):\n";
+        for (const auto& example : harmF0EndExamples) {
+            std::cout << "  record[" << example.recordIndex << "]"
+                      << " firstCount=" << example.firstCount
+                      << " secondCount=" << example.secondCount
+                      << " dataWords=" << example.dataWords
+                      << " firstPositive=" << example.firstPositive
+                      << " countPos=" << example.countPos
+                      << " blockEnd=" << example.blockEnd
+                      << " trailingZeros=" << example.trailingZeros
+                      << " positiveBeforeCount=" << example.positiveBeforeCount
+                      << " nonFiniteBeforeCount=" << example.nonFiniteBeforeCount
+                      << '\n';
+        }
+    }
     std::cout << "  non-exact parsed post-second block : "
               << harmPostSecondNonExactRepeatedF0Block << "/" << records.size() << '\n';
     std::cout << "  non-exact: trailing zero count != 1 : "
