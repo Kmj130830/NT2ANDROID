@@ -198,6 +198,10 @@ int main(int argc, char** argv) {
     std::size_t harmExactF0BlockAtDataEnd = 0;
     std::size_t harmExactF0BlockAtDataEndCountFirst = 0;
     std::map<std::uint32_t, std::size_t> harmF0PrefixLengthBeforeCount;
+    std::size_t harmUniversalExactF0BlockAtDataEnd = 0;
+    std::size_t harmUniversalF0PrefixAllFinitePositive = 0;
+    std::map<std::uint32_t, std::size_t> harmUniversalF0PrefixLength;
+    std::map<std::uint32_t, std::size_t> harmUniversalF0PrefixPositiveCount;
     std::vector<std::size_t> harmMissingBoundaryExamples;
     std::map<std::int64_t, std::size_t> harmRecoveredCountMinusFirstCount;
     std::map<std::uint32_t, std::size_t> harmRecoveredOffsetFromPositiveStart;
@@ -610,6 +614,74 @@ int main(int argc, char** argv) {
                                 }
 
                                 const std::size_t dataEnd = wordCount - trailingZeros;
+
+                                // End-anchored F0-tail search independent of sign boundaries.
+                                for (std::size_t pos = 0u; pos + 5u <= dataEnd; ++pos) {
+                                    const std::uint32_t candidate =
+                                        readU32LE(
+                                            reader.bytes(),
+                                            harmBase + secondBlockEnd + pos * 4u
+                                        );
+                                    if (candidate != firstCount) continue;
+
+                                    const std::size_t remaining = dataEnd - pos;
+                                    const std::size_t blockWords =
+                                        1u + static_cast<std::size_t>(candidate) + 3u;
+                                    if (remaining != blockWords) continue;
+
+                                    bool payloadPositive = true;
+                                    for (std::size_t j = 0u;
+                                         j < static_cast<std::size_t>(candidate) + 3u;
+                                         ++j) {
+                                        const std::uint32_t word =
+                                            readU32LE(
+                                                reader.bytes(),
+                                                harmBase
+                                                    + secondBlockEnd
+                                                    + (pos + 1u + j) * 4u
+                                            );
+                                        float value = 0.0f;
+                                        std::memcpy(&value, &word, sizeof(value));
+                                        if (!std::isfinite(value) || value <= 0.0f) {
+                                            payloadPositive = false;
+                                            break;
+                                        }
+                                    }
+
+                                    if (!payloadPositive) continue;
+
+                                    ++harmUniversalExactF0BlockAtDataEnd;
+                                    ++harmUniversalF0PrefixLength[
+                                        static_cast<std::uint32_t>(pos)
+                                    ];
+
+                                    std::size_t positiveCount = 0u;
+                                    bool prefixAllFinitePositive = true;
+                                    for (std::size_t p = 0u; p < pos; ++p) {
+                                        const std::uint32_t word =
+                                            readU32LE(
+                                                reader.bytes(),
+                                                harmBase
+                                                    + secondBlockEnd
+                                                    + p * 4u
+                                            );
+                                        float value = 0.0f;
+                                        std::memcpy(&value, &word, sizeof(value));
+                                        if (std::isfinite(value) && value > 0.0f) {
+                                            ++positiveCount;
+                                        } else {
+                                            prefixAllFinitePositive = false;
+                                        }
+                                    }
+                                    ++harmUniversalF0PrefixPositiveCount[
+                                        static_cast<std::uint32_t>(positiveCount)
+                                    ];
+                                    if (prefixAllFinitePositive) {
+                                        ++harmUniversalF0PrefixAllFinitePositive;
+                                    }
+                                    break;
+                                }
+
                                 std::size_t firstPositive = dataEnd;
                                 for (std::size_t pos = 0u; pos < dataEnd; ++pos) {
                                     const std::uint32_t word =
@@ -1629,6 +1701,18 @@ int main(int argc, char** argv) {
     printTopHistogram(
         "HARM F0 positive-prefix length before count",
         harmF0PrefixLengthBeforeCount
+    );
+    std::cout << "  universal exact [prefix][firstCount][F0*count+3] at dataEnd : "
+              << harmUniversalExactF0BlockAtDataEnd << "/" << records.size() << '\n';
+    std::cout << "  universal F0 prefix all finite > 0 : "
+              << harmUniversalF0PrefixAllFinitePositive << "/" << records.size() << '\n';
+    printTopHistogram(
+        "HARM universal F0 prefix length",
+        harmUniversalF0PrefixLength
+    );
+    printTopHistogram(
+        "HARM universal F0 prefix positive-float count",
+        harmUniversalF0PrefixPositiveCount
     );
     std::cout << "  missing-boundary F0 block ends at dataEnd : "
               << harmMissingBoundaryF0BlockAtDataEnd << "/" << missingBoundaryCount << '\n';
