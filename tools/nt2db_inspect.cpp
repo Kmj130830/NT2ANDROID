@@ -199,7 +199,7 @@ int main(int argc, char** argv) {
     std::size_t harmExactF0BlockAtDataEndCountFirst = 0;
     std::map<std::uint32_t, std::size_t> harmF0PrefixLengthBeforeCount;
     std::size_t harmUniversalExactF0BlockAtDataEnd = 0;
-    std::size_t harmEndAnchoredFirstCountPositive = 0;
+    std::size_t harmEndAnchoredFirstCountMatch = 0;
     std::size_t harmEndAnchoredFirstCountFinite = 0;
     std::map<std::uint32_t, std::size_t> harmEndAnchoredFirstCountPos;
     std::size_t harmUniversalF0PrefixAllFinitePositive = 0;
@@ -673,10 +673,6 @@ int main(int argc, char** argv) {
                                         }
                                         if (finitePayload) {
                                             ++harmEndAnchoredFirstCountFinite;
-                                        }
-                                        if (!positivePayload) {
-                                            // Keep the finite match visible; positivity is a
-                                            // secondary heuristic, not part of the layout test.
                                         }
                                     }
                                 }
@@ -1828,7 +1824,7 @@ int main(int argc, char** argv) {
               << harmUniversalExactF0BlockAtDataEnd << "/" << records.size() << '\n';
     std::cout << "  deterministic end-anchored firstCount match (all finite) : "
               << harmEndAnchoredFirstCountFinite << "/" << records.size() << '\n';
-    std::cout << "  deterministic end-anchored firstCount match (finite + positive) : "
+    std::cout << "  deterministic end-anchored firstCount position match : "
               << harmEndAnchoredFirstCountPositive << "/" << records.size() << '\n';
     printTopHistogram(
         "HARM deterministic end-anchored firstCount position",
