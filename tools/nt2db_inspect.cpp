@@ -940,6 +940,8 @@ int main(int argc, char** argv) {
                                     bool firstCountBlockFound = false;
                                     bool anyCountBlockFound = false;
                                     bool foundFollowedByNegative = false;
+                                    std::size_t bestFirstCountBlockPos = dataEnd;
+                                    std::size_t bestFirstCountBlockAfter = dataEnd;
                                     std::size_t bestFirstCountBlockAfter = dataEnd;
 
                                     for (std::size_t pos = 0u;
@@ -979,6 +981,15 @@ int main(int argc, char** argv) {
                                                 anyCountBlockFound = true;
                                                 if (candidate == firstCount) {
                                                 firstCountBlockFound = true;
+
+                                                const std::size_t afterBlock =
+                                                    pos + 1u
+                                                    + static_cast<std::size_t>(candidate)
+                                                    + 3u;
+                                                if (afterBlock <= bestFirstCountBlockAfter) {
+                                                    bestFirstCountBlockPos = pos;
+                                                    bestFirstCountBlockAfter = afterBlock;
+                                                }
 
                                                 const std::size_t afterBlock =
                                                     pos + 1u
