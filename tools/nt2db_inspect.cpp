@@ -980,24 +980,18 @@ int main(int argc, char** argv) {
                                             if (f0BlockPositive) {
                                                 anyCountBlockFound = true;
                                                 if (candidate == firstCount) {
-                                                firstCountBlockFound = true;
+                                                    firstCountBlockFound = true;
 
-                                                const std::size_t afterBlock =
-                                                    pos + 1u
-                                                    + static_cast<std::size_t>(candidate)
-                                                    + 3u;
-                                                if (afterBlock <= bestFirstCountBlockAfter) {
-                                                    bestFirstCountBlockPos = pos;
-                                                    bestFirstCountBlockAfter = afterBlock;
-                                                }
+                                                    const std::size_t afterBlock =
+                                                        pos + 1u
+                                                        + static_cast<std::size_t>(candidate)
+                                                        + 3u;
 
-                                                const std::size_t afterBlock =
-                                                    pos + 1u
-                                                    + static_cast<std::size_t>(candidate)
-                                                    + 3u;
-                                                if (afterBlock >= bestFirstCountBlockAfter) {
-                                                    bestFirstCountBlockAfter = afterBlock;
-                                                }
+                                                    if (afterBlock <= bestFirstCountBlockAfter) {
+                                                        bestFirstCountBlockPos = pos;
+                                                        bestFirstCountBlockAfter = afterBlock;
+                                                    }
+
                                                     if (afterBlock < dataEnd) {
                                                         const std::uint32_t nextWord =
                                                             readU32LE(
