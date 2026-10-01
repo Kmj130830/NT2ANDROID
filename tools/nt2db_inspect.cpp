@@ -1550,6 +1550,8 @@ int main(int argc, char** argv) {
         "HARM missing-boundary second count",
         harmMissingBoundarySecondCount
     );
+    const std::size_t missingBoundaryCount = harmPositiveDataMissingSignBoundary;
+
     std::cout << "  missing boundary contains [firstCount][positive floats] : "
               << harmMissingBoundaryContainsFirstCountF0Block << "/" << records.size() << '\n';
     std::cout << "  missing boundary contains any [count][positive floats] : "
@@ -1568,7 +1570,6 @@ int main(int argc, char** argv) {
               << harmMissingBoundaryF0BlockSuffixAllFinitePositive << "/" << missingBoundaryCount << '\n';
     std::cout << "  missing-boundary F0 suffix all finite >= 0 : "
               << harmMissingBoundaryF0BlockSuffixAllFiniteNonNegative << "/" << missingBoundaryCount << '\n';
-    const std::size_t missingBoundaryCount = harmPositiveDataMissingSignBoundary;
     printTopHistogram(
         "HARM missing-boundary F0 suffix length",
         harmMissingBoundaryF0BlockSuffixLength
