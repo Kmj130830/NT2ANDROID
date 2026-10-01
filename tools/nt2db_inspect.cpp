@@ -942,7 +942,6 @@ int main(int argc, char** argv) {
                                     bool foundFollowedByNegative = false;
                                     std::size_t bestFirstCountBlockPos = dataEnd;
                                     std::size_t bestFirstCountBlockAfter = dataEnd;
-                                    std::size_t bestFirstCountBlockAfter = dataEnd;
 
                                     for (std::size_t pos = 0u;
                                          pos <= firstCountPosLimit;
