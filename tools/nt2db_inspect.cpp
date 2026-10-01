@@ -199,6 +199,9 @@ int main(int argc, char** argv) {
     std::size_t harmExactF0BlockAtDataEndCountFirst = 0;
     std::map<std::uint32_t, std::size_t> harmF0PrefixLengthBeforeCount;
     std::size_t harmUniversalExactF0BlockAtDataEnd = 0;
+    std::size_t harmEndAnchoredFirstCountPositive = 0;
+    std::size_t harmEndAnchoredFirstCountFinite = 0;
+    std::map<std::uint32_t, std::size_t> harmEndAnchoredFirstCountPos;
     std::size_t harmUniversalF0PrefixAllFinitePositive = 0;
     std::map<std::uint32_t, std::size_t> harmUniversalF0PrefixLength;
     std::map<std::uint32_t, std::size_t> harmUniversalF0PrefixPositiveCount;
@@ -212,6 +215,9 @@ int main(int argc, char** argv) {
         std::size_t countPos = 0;
         std::size_t blockEnd = 0;
         std::size_t trailingZeros = 0;
+        std::size_t lastCountPos = 0;
+        std::size_t lastBlockEnd = 0;
+        std::size_t lastSuffixLength = 0;
         std::size_t positiveBeforeCount = 0;
         std::size_t nonFiniteBeforeCount = 0;
     };
@@ -628,6 +634,53 @@ int main(int argc, char** argv) {
 
                                 const std::size_t dataEnd = wordCount - trailingZeros;
 
+                                // Deterministic end-anchored test: if the tail really is
+                                // [u32 firstCount][float[firstCount]][3 floats], its count
+                                // position is fixed by dataEnd - (1 + firstCount + 3).
+                                if (dataEnd >= static_cast<std::size_t>(firstCount) + 4u) {
+                                    const std::size_t endCountPos =
+                                        dataEnd - (1u + static_cast<std::size_t>(firstCount) + 3u);
+                                    const std::uint32_t endCandidate =
+                                        readU32LE(
+                                            reader.bytes(),
+                                            harmBase + secondBlockEnd + endCountPos * 4u
+                                        );
+                                    if (endCandidate == firstCount) {
+                                        ++harmEndAnchoredFirstCountPositive;
+                                        ++harmEndAnchoredFirstCountPos[
+                                            static_cast<std::uint32_t>(endCountPos)
+                                        ];
+                                        bool finitePayload = true;
+                                        bool positivePayload = true;
+                                        for (std::size_t j = 0u;
+                                             j < static_cast<std::size_t>(firstCount) + 3u;
+                                             ++j) {
+                                            const std::uint32_t word =
+                                                readU32LE(
+                                                    reader.bytes(),
+                                                    harmBase
+                                                        + secondBlockEnd
+                                                        + (endCountPos + 1u + j) * 4u
+                                                );
+                                            float value = 0.0f;
+                                            std::memcpy(&value, &word, sizeof(value));
+                                            if (!std::isfinite(value)) {
+                                                finitePayload = false;
+                                                positivePayload = false;
+                                                break;
+                                            }
+                                            if (value <= 0.0f) positivePayload = false;
+                                        }
+                                        if (finitePayload) {
+                                            ++harmEndAnchoredFirstCountFinite;
+                                        }
+                                        if (!positivePayload) {
+                                            // Keep the finite match visible; positivity is a
+                                            // secondary heuristic, not part of the layout test.
+                                        }
+                                    }
+                                }
+
                                 // End-anchored F0-tail search independent of sign boundaries.
                                 for (std::size_t pos = 0u; pos + 5u <= dataEnd; ++pos) {
                                     const std::uint32_t candidate =
@@ -942,6 +995,8 @@ int main(int argc, char** argv) {
                                     bool foundFollowedByNegative = false;
                                     std::size_t bestFirstCountBlockPos = dataEnd;
                                     std::size_t bestFirstCountBlockAfter = dataEnd;
+                                    std::size_t lastFirstCountBlockPos = dataEnd;
+                                    std::size_t lastFirstCountBlockAfter = dataEnd;
 
                                     for (std::size_t pos = 0u;
                                          pos <= firstCountPosLimit;
@@ -990,6 +1045,10 @@ int main(int argc, char** argv) {
                                                         bestFirstCountBlockPos = pos;
                                                         bestFirstCountBlockAfter = afterBlock;
                                                     }
+                                                    if (afterBlock >= lastFirstCountBlockAfter) {
+                                                        lastFirstCountBlockPos = pos;
+                                                        lastFirstCountBlockAfter = afterBlock;
+                                                    }
 
                                                     if (afterBlock < dataEnd) {
                                                         const std::uint32_t nextWord =
@@ -1029,6 +1088,12 @@ int main(int argc, char** argv) {
                                             example.countPos = bestFirstCountBlockPos;
                                             example.blockEnd = bestFirstCountBlockAfter;
                                             example.trailingZeros = trailingZeros;
+                                            example.lastCountPos = lastFirstCountBlockPos;
+                                            example.lastBlockEnd = lastFirstCountBlockAfter;
+                                            example.lastSuffixLength =
+                                                dataEnd >= lastFirstCountBlockAfter
+                                                    ? dataEnd - lastFirstCountBlockAfter
+                                                    : 0u;
 
                                             for (std::size_t p = 0u;
                                                  p < bestFirstCountBlockPos;
@@ -1066,9 +1131,9 @@ int main(int argc, char** argv) {
                                     }
 
                                     if (firstCountBlockFound
-                                        && bestFirstCountBlockAfter <= dataEnd) {
+                                        && lastFirstCountBlockAfter <= dataEnd) {
                                         const std::size_t suffixLength =
-                                            dataEnd - bestFirstCountBlockAfter;
+                                            dataEnd - lastFirstCountBlockAfter;
 
                                         if (suffixLength == 0u) {
                                             ++harmMissingBoundaryF0BlockAtDataEnd;
@@ -1083,7 +1148,7 @@ int main(int argc, char** argv) {
                                             bool suffixAllFinitePositive = true;
                                             bool suffixAllFiniteNonNegative = true;
 
-                                            for (std::size_t p = bestFirstCountBlockAfter;
+                                            for (std::size_t p = lastFirstCountBlockAfter;
                                                  p < dataEnd;
                                                  ++p) {
                                                 const std::uint32_t suffixWord =
@@ -1761,6 +1826,14 @@ int main(int argc, char** argv) {
     );
     std::cout << "  universal exact [prefix][firstCount][F0*count+3] at dataEnd : "
               << harmUniversalExactF0BlockAtDataEnd << "/" << records.size() << '\n';
+    std::cout << "  deterministic end-anchored firstCount match (all finite) : "
+              << harmEndAnchoredFirstCountFinite << "/" << records.size() << '\n';
+    std::cout << "  deterministic end-anchored firstCount match (finite + positive) : "
+              << harmEndAnchoredFirstCountPositive << "/" << records.size() << '\n';
+    printTopHistogram(
+        "HARM deterministic end-anchored firstCount position",
+        harmEndAnchoredFirstCountPos
+    );
     std::cout << "  universal F0 prefix all finite > 0 : "
               << harmUniversalF0PrefixAllFinitePositive << "/" << records.size() << '\n';
     printTopHistogram(
@@ -1798,6 +1871,9 @@ int main(int argc, char** argv) {
                       << " countPos=" << example.countPos
                       << " blockEnd=" << example.blockEnd
                       << " trailingZeros=" << example.trailingZeros
+                      << " lastCountPos=" << example.lastCountPos
+                      << " lastBlockEnd=" << example.lastBlockEnd
+                      << " lastSuffixLength=" << example.lastSuffixLength
                       << " positiveBeforeCount=" << example.positiveBeforeCount
                       << " nonFiniteBeforeCount=" << example.nonFiniteBeforeCount
                       << '\n';
