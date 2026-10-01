@@ -789,7 +789,6 @@ int main(int argc, char** argv) {
                                     bool firstCountBlockFound = false;
                                     bool anyCountBlockFound = false;
                                     bool foundFollowedByNegative = false;
-                                    std::size_t bestFirstCountBlockPos = dataEnd;
                                     std::size_t bestFirstCountBlockAfter = dataEnd;
 
                                     for (std::size_t pos = 0u;
@@ -835,7 +834,6 @@ int main(int argc, char** argv) {
                                                     + static_cast<std::size_t>(candidate)
                                                     + 3u;
                                                 if (afterBlock >= bestFirstCountBlockAfter) {
-                                                    bestFirstCountBlockPos = pos;
                                                     bestFirstCountBlockAfter = afterBlock;
                                                 }
                                                     if (afterBlock < dataEnd) {
@@ -1559,17 +1557,18 @@ int main(int argc, char** argv) {
     std::cout << "  recovered F0 block followed by negative float : "
               << harmMissingBoundaryF0BlockFollowedByNegative << "/" << records.size() << '\n';
     std::cout << "  missing-boundary F0 block ends at dataEnd : "
-              << harmMissingBoundaryF0BlockAtDataEnd << "/" << records.size() << '\n';
+              << harmMissingBoundaryF0BlockAtDataEnd << "/" << missingBoundaryCount << '\n';
     std::cout << "  missing-boundary F0 block has positive suffix : "
-              << harmMissingBoundaryF0BlockSuffixHasPositive << "/" << records.size() << '\n';
+              << harmMissingBoundaryF0BlockSuffixHasPositive << "/" << missingBoundaryCount << '\n';
     std::cout << "  missing-boundary F0 block has negative suffix : "
-              << harmMissingBoundaryF0BlockSuffixHasNegative << "/" << records.size() << '\n';
+              << harmMissingBoundaryF0BlockSuffixHasNegative << "/" << missingBoundaryCount << '\n';
     std::cout << "  missing-boundary F0 block has zero suffix : "
-              << harmMissingBoundaryF0BlockSuffixHasZero << "/" << records.size() << '\n';
+              << harmMissingBoundaryF0BlockSuffixHasZero << "/" << missingBoundaryCount << '\n';
     std::cout << "  missing-boundary F0 suffix all finite > 0 : "
-              << harmMissingBoundaryF0BlockSuffixAllFinitePositive << "/" << records.size() << '\n';
+              << harmMissingBoundaryF0BlockSuffixAllFinitePositive << "/" << missingBoundaryCount << '\n';
     std::cout << "  missing-boundary F0 suffix all finite >= 0 : "
-              << harmMissingBoundaryF0BlockSuffixAllFiniteNonNegative << "/" << records.size() << '\n';
+              << harmMissingBoundaryF0BlockSuffixAllFiniteNonNegative << "/" << missingBoundaryCount << '\n';
+    const std::size_t missingBoundaryCount = harmPositiveDataMissingSignBoundary;
     printTopHistogram(
         "HARM missing-boundary F0 suffix length",
         harmMissingBoundaryF0BlockSuffixLength
