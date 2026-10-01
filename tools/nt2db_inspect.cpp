@@ -188,6 +188,13 @@ int main(int argc, char** argv) {
     std::size_t harmMissingBoundaryContainsFirstCountF0Block = 0;
     std::size_t harmMissingBoundaryContainsAnyCountF0Block = 0;
     std::size_t harmMissingBoundaryF0BlockFollowedByNegative = 0;
+    std::size_t harmMissingBoundaryF0BlockAtDataEnd = 0;
+    std::size_t harmMissingBoundaryF0BlockSuffixHasPositive = 0;
+    std::size_t harmMissingBoundaryF0BlockSuffixHasNegative = 0;
+    std::size_t harmMissingBoundaryF0BlockSuffixHasZero = 0;
+    std::size_t harmMissingBoundaryF0BlockSuffixAllFinitePositive = 0;
+    std::size_t harmMissingBoundaryF0BlockSuffixAllFiniteNonNegative = 0;
+    std::map<std::uint32_t, std::size_t> harmMissingBoundaryF0BlockSuffixLength;
     std::vector<std::size_t> harmMissingBoundaryExamples;
     std::map<std::int64_t, std::size_t> harmRecoveredCountMinusFirstCount;
     std::map<std::uint32_t, std::size_t> harmRecoveredOffsetFromPositiveStart;
@@ -782,6 +789,8 @@ int main(int argc, char** argv) {
                                     bool firstCountBlockFound = false;
                                     bool anyCountBlockFound = false;
                                     bool foundFollowedByNegative = false;
+                                    std::size_t bestFirstCountBlockPos = dataEnd;
+                                    std::size_t bestFirstCountBlockAfter = dataEnd;
 
                                     for (std::size_t pos = 0u;
                                          pos <= firstCountPosLimit;
@@ -819,12 +828,16 @@ int main(int argc, char** argv) {
                                             if (f0BlockPositive) {
                                                 anyCountBlockFound = true;
                                                 if (candidate == firstCount) {
-                                                    firstCountBlockFound = true;
+                                                firstCountBlockFound = true;
 
-                                                    const std::size_t afterBlock =
-                                                        pos + 1u
-                                                        + static_cast<std::size_t>(candidate)
-                                                        + 3u;
+                                                const std::size_t afterBlock =
+                                                    pos + 1u
+                                                    + static_cast<std::size_t>(candidate)
+                                                    + 3u;
+                                                if (afterBlock >= bestFirstCountBlockAfter) {
+                                                    bestFirstCountBlockPos = pos;
+                                                    bestFirstCountBlockAfter = afterBlock;
+                                                }
                                                     if (afterBlock < dataEnd) {
                                                         const std::uint32_t nextWord =
                                                             readU32LE(
@@ -857,6 +870,77 @@ int main(int argc, char** argv) {
                                     }
                                     if (foundFollowedByNegative) {
                                         ++harmMissingBoundaryF0BlockFollowedByNegative;
+                                    }
+
+                                    if (firstCountBlockFound
+                                        && bestFirstCountBlockAfter <= dataEnd) {
+                                        const std::size_t suffixLength =
+                                            dataEnd - bestFirstCountBlockAfter;
+
+                                        if (suffixLength == 0u) {
+                                            ++harmMissingBoundaryF0BlockAtDataEnd;
+                                        } else {
+                                            ++harmMissingBoundaryF0BlockSuffixLength[
+                                                static_cast<std::uint32_t>(suffixLength)
+                                            ];
+
+                                            bool suffixHasPositive = false;
+                                            bool suffixHasNegative = false;
+                                            bool suffixHasZero = false;
+                                            bool suffixAllFinitePositive = true;
+                                            bool suffixAllFiniteNonNegative = true;
+
+                                            for (std::size_t p = bestFirstCountBlockAfter;
+                                                 p < dataEnd;
+                                                 ++p) {
+                                                const std::uint32_t suffixWord =
+                                                    readU32LE(
+                                                        reader.bytes(),
+                                                        harmBase
+                                                            + secondBlockEnd
+                                                            + p * 4u
+                                                    );
+                                                float suffixValue = 0.0f;
+                                                std::memcpy(
+                                                    &suffixValue,
+                                                    &suffixWord,
+                                                    sizeof(suffixValue)
+                                                );
+
+                                                if (suffixValue > 0.0f) {
+                                                    suffixHasPositive = true;
+                                                } else if (suffixValue < 0.0f) {
+                                                    suffixHasNegative = true;
+                                                } else {
+                                                    suffixHasZero = true;
+                                                }
+
+                                                if (!std::isfinite(suffixValue)
+                                                    || suffixValue <= 0.0f) {
+                                                    suffixAllFinitePositive = false;
+                                                }
+                                                if (!std::isfinite(suffixValue)
+                                                    || suffixValue < 0.0f) {
+                                                    suffixAllFiniteNonNegative = false;
+                                                }
+                                            }
+
+                                            if (suffixHasPositive) {
+                                                ++harmMissingBoundaryF0BlockSuffixHasPositive;
+                                            }
+                                            if (suffixHasNegative) {
+                                                ++harmMissingBoundaryF0BlockSuffixHasNegative;
+                                            }
+                                            if (suffixHasZero) {
+                                                ++harmMissingBoundaryF0BlockSuffixHasZero;
+                                            }
+                                            if (suffixAllFinitePositive) {
+                                                ++harmMissingBoundaryF0BlockSuffixAllFinitePositive;
+                                            }
+                                            if (suffixAllFiniteNonNegative) {
+                                                ++harmMissingBoundaryF0BlockSuffixAllFiniteNonNegative;
+                                            }
+                                        }
                                     }
 
                                     ++harmMissingBoundaryHarm10[
@@ -1474,6 +1558,22 @@ int main(int argc, char** argv) {
               << harmMissingBoundaryContainsAnyCountF0Block << "/" << records.size() << '\n';
     std::cout << "  recovered F0 block followed by negative float : "
               << harmMissingBoundaryF0BlockFollowedByNegative << "/" << records.size() << '\n';
+    std::cout << "  missing-boundary F0 block ends at dataEnd : "
+              << harmMissingBoundaryF0BlockAtDataEnd << "/" << records.size() << '\n';
+    std::cout << "  missing-boundary F0 block has positive suffix : "
+              << harmMissingBoundaryF0BlockSuffixHasPositive << "/" << records.size() << '\n';
+    std::cout << "  missing-boundary F0 block has negative suffix : "
+              << harmMissingBoundaryF0BlockSuffixHasNegative << "/" << records.size() << '\n';
+    std::cout << "  missing-boundary F0 block has zero suffix : "
+              << harmMissingBoundaryF0BlockSuffixHasZero << "/" << records.size() << '\n';
+    std::cout << "  missing-boundary F0 suffix all finite > 0 : "
+              << harmMissingBoundaryF0BlockSuffixAllFinitePositive << "/" << records.size() << '\n';
+    std::cout << "  missing-boundary F0 suffix all finite >= 0 : "
+              << harmMissingBoundaryF0BlockSuffixAllFiniteNonNegative << "/" << records.size() << '\n';
+    printTopHistogram(
+        "HARM missing-boundary F0 suffix length",
+        harmMissingBoundaryF0BlockSuffixLength
+    );
     std::cout << "  non-exact parsed post-second block : "
               << harmPostSecondNonExactRepeatedF0Block << "/" << records.size() << '\n';
     std::cout << "  non-exact: trailing zero count != 1 : "
